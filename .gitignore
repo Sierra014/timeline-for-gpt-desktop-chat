@@ -1,0 +1,6 @@
+/app/data/
+/app/runtime/node.exe
+/app/SHA256SUMS.txt
+/dist/
+__pycache__/
+*.pyc

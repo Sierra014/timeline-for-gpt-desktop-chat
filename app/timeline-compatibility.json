@@ -1,0 +1,10 @@
+{
+  "toolVersion": "0.1.3",
+  "buildPolicy": "attempt-and-log",
+  "packageName": "OpenAI.Codex",
+  "verifiedStoreVersion": "26.930.2377.0",
+  "entryScript": "app://-/assets/index-261894768656.js",
+  "historyModule": "app://-/assets/app-initial-1da99842592d.js",
+  "historyExport": "qDn",
+  "mathModule": "app://-/assets/katex-fb2359bfd034.js"
+}
