@@ -1,4 +1,4 @@
-# Chat Timeline · Windows 便携版 0.1.3
+# 桌面端chat的索引导航条
 
 ## For User
 
