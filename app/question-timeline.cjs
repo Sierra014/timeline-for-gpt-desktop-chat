@@ -6,6 +6,9 @@ const { installQuestionTimeline } = require('./timeline-runtime.js');
 const { readChatTimelineState, installInChatGPT } = require('./timeline-chat-adapter.cjs');
 const compatibility = require('./timeline-compatibility.json');
 const {resolveNativeTimeline} = require('./timeline-native-resolver.cjs');
+const {installAnnotationStore} = require('./annotations-store.js');
+const {installAnnotationLifecycle} = require('./annotations-lifecycle.js');
+const {applicationReady} = require('./annotate-chat.cjs');
 const {writeDiagnostics} = require('./timeline-diagnostics.cjs');
 let stage = 'arguments';
 
@@ -21,7 +24,7 @@ async function installOnTarget(target, port = 39223, options = {}) {
   const previous = await evaluateTarget(target, port, `(() => { let diagnostics = window.__questionTimelineDiagnostics; if (!diagnostics) { try { diagnostics = JSON.parse(localStorage.getItem('question-timeline:diagnostics:v1') || 'null'); } catch {} } return {diagnostics:diagnostics || null}; })()`);
   if (previous.diagnostics) writeDiagnostics('previous-runtime', previous);
   const config = {...options, compatibility, toolVersion: compatibility.toolVersion};
-  const expression = '(' + installInChatGPT.toString() + ')(' + installQuestionTimeline.toString() + ',' + readChatTimelineState.toString() + ',' + JSON.stringify(config) + ',' + resolveNativeTimeline.toString() + ')';
+  const expression = '(async()=>{if(!('+applicationReady.toString()+')())return {installed:false,waitingForApplication:true};await ('+installAnnotationLifecycle.toString()+')('+installAnnotationStore.toString()+',{ready:'+applicationReady.toString()+'});return (' + installInChatGPT.toString() + ')(' + installQuestionTimeline.toString() + ',' + readChatTimelineState.toString() + ',' + JSON.stringify(config) + ',' + resolveNativeTimeline.toString() + ');})()';
   const result = {installedAt: new Date().toISOString(), ...await evaluateTarget(target, port, expression, 45000)};
   fs.writeFileSync(dataPath('timeline-result.json'), JSON.stringify(result, null, 2) + '\n', 'utf8');
   writeDiagnostics('installation-result', result);
@@ -44,7 +47,7 @@ async function main() {
   const targets = mainTargets(pages);
   if (remove) {
     const reports = [];
-    for (const target of targets) reports.push(await evaluateTarget(target, port, `(() => { const present = !!window.__questionTimelinePrototype; window.__questionTimelinePrototype?.destroy(); return { removed: present }; })()`));
+    for (const target of targets) reports.push(await evaluateTarget(target, port, `(() => { const present = !!window.__questionTimelinePrototype; window.__questionTimelinePrototype?.destroy(); if(!window.__chatAnnotationsV1)window.__chatAnnotationLifecycleV1?.destroy(); return { removed: present }; })()`));
     console.log(JSON.stringify({ removedWindows: reports.filter(report => report.removed).length }));
     return;
   }

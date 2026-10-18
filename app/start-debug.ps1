@@ -1,4 +1,4 @@
-param([switch]$CheckOnly, [switch]$OpenIfRunning, [ValidateRange(1024,65535)][int]$Port = 39223)
+﻿param([switch]$CheckOnly, [switch]$OpenIfRunning, [ValidateRange(1024,65535)][int]$Port = 39223)
 $ErrorActionPreference = 'Stop'
 
 # Resolve the current Store package rather than pinning a versioned WindowsApps path.
@@ -90,4 +90,4 @@ for ($attempt = 0; $attempt -lt 20; $attempt++) {
 }
 if (!$ready) { throw 'The debug endpoint did not become available. The client may ignore these flags; this is not a successful connection test.' }
 Write-Host ('Debug endpoint ready: http://127.0.0.1:' + $Port)
-Write-Host 'Local connection ready. Open a ChatGPT conversation for Timeline. Keep this port local.'
+Write-Host 'Local connection ready. Open a ChatGPT or Codex conversation for annotations. Keep this port local.'

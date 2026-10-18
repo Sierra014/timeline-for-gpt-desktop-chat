@@ -67,7 +67,12 @@ function readChatTimelineState(atom) {
   return {
     root, contextId: source.contextId, api, complete, historyStateAvailable: states.length > 0,
     entries: entries.map(entry => ({ key: entry.turnKey, text: entry.turn.items.filter(item => item.type === 'user-message')
-      .map(item => typeof item.message === 'string' ? item.message : '').join('\n').trim(), answer: assistantPreview(entry.turn.items) })),
+      .map(item => typeof item.message === 'string' ? item.message : '').join('\n').trim(), answer: assistantPreview(entry.turn.items),
+      userMessageIds: [...new Set(entry.turn.items.filter(item => item.type === 'user-message').map(item => item.messageId).filter(id => typeof id === 'string'))],
+      assistantMessageIds: [...new Set(entry.turn.items.filter(item => item.type === 'assistant-message').flatMap(item => {
+        if (item.sourceMessageIds == null) return typeof item.messageId === 'string' ? [item.messageId] : [];
+        return Array.isArray(item.sourceMessageIds) && item.sourceMessageIds.length === 1 && typeof item.sourceMessageIds[0] === 'string' ? [item.sourceMessageIds[0]] : [];
+      }))] })),
     loadHistory: states.length && !states.some(state => state.isLoading) ? signal => source.search({ domain: 'conversation', contextId: source.contextId, query: '' }, { signal }) : null,
   };
 }

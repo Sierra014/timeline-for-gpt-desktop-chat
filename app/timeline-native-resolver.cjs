@@ -32,7 +32,7 @@ async function resolveNativeTimeline(readChat, build) {
   async function source(path) {
     if (texts.has(path)) return texts.get(path);
     try {
-      const response = await fetch(path, {signal: AbortSignal.timeout(5000)});
+      const response = await fetch(path, {signal: AbortSignal.timeout(15000)});
       if (!response.ok) throw Error('Asset unavailable');
       const text = await response.text();
       if (text.length > 80000000) throw Error('Asset too large');

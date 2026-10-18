@@ -1,0 +1,95 @@
+'use strict';
+const {listTargets, evaluate} = require('./desktop-connection.cjs');
+const {readAnnotationSurface} = require('./annotations-adapter.js');
+const {installChatAnnotations} = require('./annotations-runtime.js');
+const {installAnnotationStore} = require('./annotations-store.js');
+const {installAnnotationLifecycle} = require('./annotations-lifecycle.js');
+const version = '0.1.17';
+
+function removeAnnotations(keepLifecycle = false) {
+  const selector = '#chat-annotations-v1,style[data-chat-annotations-style="v1"]';
+  const removed = !!window.__chatAnnotationsV1 || !!document.querySelector(selector);
+  window.__chatAnnotationsV1?.destroy();
+  if(!keepLifecycle&&!window.__questionTimelinePrototype)window.__chatAnnotationLifecycleV1?.destroy();
+  for (const element of document.querySelectorAll(selector)) element.remove();
+  for (const color of ['yellow','green','pink']) CSS.highlights?.delete('chat-annotations-' + color);
+  return {removed};
+}
+
+// A debug target/document can be available long before the native React shell boots.
+// Only committed, visible application UI permits native module discovery and hooks.
+function applicationReady() {
+  if (document.readyState !== 'complete') return false;
+  return [...document.querySelectorAll('.thread-scroll-container,nav,aside')].some(element => {
+    if (!element.checkVisibility({visibilityProperty:true,opacityProperty:true})) return false;
+    const bounds = element.getBoundingClientRect();
+    return bounds.width > 0 && bounds.height > 0 &&
+      (element.matches('.thread-scroll-container') || !!element.querySelector('button,a[href]'));
+  });
+}
+function inspect(readSurface, readReady) {
+  const surface = readSurface();
+  return {applicationReady:readReady(), supported:!!surface, supportsHighlights:!!CSS.highlights && typeof Highlight === 'function',
+    annotationHosts:document.querySelectorAll('#chat-annotations-v1').length,
+    messages:surface?.messages.length || 0, uniqueMessages:surface ? new Set(surface.messages.map(message => message.messageId)).size : 0,
+    mode:surface?.contextId.startsWith('codex:') ? 'codex' : surface ? 'chatgpt' : 'unrecognized',
+    runtime:window.__chatAnnotationsV1?.summary() || null,
+    lifecycle:window.__chatAnnotationLifecycleV1?.summary() || null};
+}
+async function pass(mode) {
+  const windows = [];
+  for (const [index, target] of (await listTargets()).entries()) {
+    try {
+      if (mode === 'remove') {
+        const result = await evaluate(target, '(' + removeAnnotations.toString() + ')()');
+        windows.push({window:index + 1, ...result}); continue;
+      }
+      const report = await evaluate(target, '(' + inspect.toString() + ')(' + readAnnotationSurface.toString() + ',' + applicationReady.toString() + ')');
+      if (mode !== 'check') {
+        if (!report.applicationReady) {
+          if (report.annotationHosts) await evaluate(target,'('+removeAnnotations.toString()+')(true)');
+          windows.push({window:index + 1, ...report, removed:!!report.annotationHosts, waitingForConversation:!report.supported, waitingForApplication:true}); continue;
+        }
+        // Recheck inside the installer: navigation can replace the page between evaluations.
+        report.lifecycle = await evaluate(target,'('+installAnnotationLifecycle.toString()+')('+installAnnotationStore.toString()+',{ready:'+applicationReady.toString()+'})');
+        if (report.lifecycle.waitingForApplication) {
+          windows.push({window:index + 1, ...report, waitingForApplication:true}); continue;
+        }
+      }
+      if (mode !== 'check' && !report.supported && report.annotationHosts) {
+        // Keep lifecycle observation on blank/settings pages, where sidebar deletion is still possible.
+        await evaluate(target,'('+removeAnnotations.toString()+')(true)');
+        windows.push({window:index + 1, mode:report.mode, removed:true, waitingForConversation:true}); continue;
+      }
+      if (mode === 'check' || !report.supported || !report.supportsHighlights || (mode === 'watch' && report.runtime?.installed && report.runtime.version === version)) {
+        windows.push({window:index + 1, ...report}); continue;
+      }
+      const result = await evaluate(target, '(' + installChatAnnotations.toString() + ')(' + readAnnotationSurface.toString() + ')');
+      windows.push({window:index + 1, mode:report.mode, ...result});
+    } catch {windows.push({window:index + 1, failed:true});}
+  }
+  return {checkedAt:new Date().toISOString(), version, windows};
+}
+async function main() {
+  const allowed = new Set(['--check','--remove','--watch']);
+  if (process.argv.slice(2).some(argument => !allowed.has(argument)) || process.argv.length > 3) throw Error('Use --check, --remove, --watch, or no arguments.');
+  const mode = process.argv.includes('--check') ? 'check' : process.argv.includes('--remove') ? 'remove' : process.argv.includes('--watch') ? 'watch' : 'install';
+  if (mode !== 'watch') {
+    const result = await pass(mode); console.log(JSON.stringify(result, null, 2));
+    if (mode === 'install' && !result.windows.some(window => window.installed)) process.exitCode = 1;
+    if (mode === 'check' && !result.windows.some(window => window.supported && window.supportsHighlights)) process.exitCode = 1;
+    return;
+  }
+  let stop = false, lastStatus = '';
+  process.on('SIGINT', () => {stop = true;}); process.on('SIGTERM', () => {stop = true;});
+  console.log('Annotations watcher active. Close this console or press Ctrl+C to stop automatic installation. Saved annotations remain local.');
+  while (!stop) {
+    let result;
+    try {result = await pass('watch');} catch {result = {waitingForDebug:true};}
+    const status = JSON.stringify(result.windows?.map(window => ({window:window.window,mode:window.mode,installed:window.installed || window.runtime?.installed || false,failed:!!window.failed})) || result);
+    if (status !== lastStatus) {console.log(status); lastStatus = status;}
+    if (!stop) await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+}
+if (require.main === module) main().catch(error => {console.error('Annotations: ' + error.message); process.exitCode = 1;});
+module.exports = {applicationReady, inspect, pass, removeAnnotations};

@@ -11,7 +11,7 @@ function runtimeSnapshot() {
 }
 
 // Dependency injection keeps lifecycle tests off the user's real desktop client.
-function createMonitor({list, snapshot, inspect, install, remove, log, now = Date.now, version = build.toolVersion}) {
+function createMonitor({list, snapshot, inspect, install, remove, log, now = Date.now, version = build.toolVersion, requireAnnotationNavigation = false}) {
   const states = new Map();
   let appliedRemoval = 0;
   async function tick(preferences = {}) {
@@ -22,12 +22,14 @@ function createMonitor({list, snapshot, inspect, install, remove, log, now = Dat
     for (const id of states.keys()) if (!current.has(id)) states.delete(id);
     const removal = Number(preferences.removeGeneration) || 0;
     if (removal > appliedRemoval) {
-      for (const page of pages) { try { await remove(page); } catch { log('tray-remove-failed', {stage: 'remove'}); } }
-      appliedRemoval = removal; states.clear();
+      let successful = true;
+      for (const page of pages) { try { await remove(page); } catch { successful = false; log('tray-remove-failed', {stage: 'remove'}); } }
+      if (successful) appliedRemoval = removal;
+      states.clear();
     }
     const enabled = preferences.enabled !== false;
     const generation = Number(preferences.generation) || 0;
-    let installed = 0, failed = 0;
+    let installed = 0, failed = 0, pendingHistory = 0;
     for (const page of pages) {
       let previous = states.get(page.id);
       if (!previous) { previous = {generation, retryAt: 0, diagnosticSignature: '', failed: false}; states.set(page.id, previous); }
@@ -40,8 +42,12 @@ function createMonitor({list, snapshot, inspect, install, remove, log, now = Dat
         }
         if (!enabled) { if (current.summary?.installed) installed++; continue; }
         const requested = previous.generation !== generation;
-        if (current.summary?.installed && current.summary.toolVersion === version && !requested) {
-          installed++; previous.failed = false; continue;
+        const compatible = current.summary?.installed && current.summary.toolVersion === version &&
+          (!requireAnnotationNavigation || current.summary.hasAnnotationNavigation);
+        const needsHistory = compatible && current.summary.questionCount > 0 && !current.summary.complete && current.diagnostics?.historyAvailable === false;
+        // A usable rail may still be missing its history loader after a cold asset timeout.
+        if (compatible && !requested && (!needsHistory || now() < previous.retryAt)) {
+          installed++; if (needsHistory) pendingHistory++; previous.failed = false; continue;
         }
         if (!requested && now() < previous.retryAt) { if (previous.failed) failed++; continue; }
         const report = await inspect(page);
@@ -50,14 +56,15 @@ function createMonitor({list, snapshot, inspect, install, remove, log, now = Dat
         const options = ['left', 'right'].includes(preferences.side) ? {side: preferences.side} : {};
         const result = await install(page, options);
         previous.failed = !result.installed;
-        previous.retryAt = result.installed ? 0 : now() + 30000;
-        if (result.installed) installed++; else failed++;
+        const historyMissing = result.installed && result.questionCount > 0 && !result.complete && result.diagnostics?.historyAvailable === false;
+        previous.retryAt = result.installed && !historyMissing ? 0 : now() + 30000;
+        if (result.installed) {installed++; if (historyMissing) pendingHistory++;} else failed++;
       } catch {
         if (now() >= previous.retryAt) log('tray-window-failed', {stage: 'watch-window', errorType: 'Error'});
         previous.failed = true; previous.retryAt = now() + 30000; failed++;
       }
     }
-    return {phase: enabled ? failed ? 'adapter-error' : 'connected' : 'paused', windows: pages.length, installed, failed};
+    return {phase: enabled ? failed ? 'adapter-error' : pendingHistory ? 'waiting-history' : 'connected' : 'paused', windows: pages.length, installed, failed};
   }
   return {tick};
 }

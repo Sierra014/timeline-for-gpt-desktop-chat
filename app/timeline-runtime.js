@@ -43,7 +43,7 @@ function installQuestionTimeline(readState, options = {}) {
     .bookmark:hover,.bookmark[aria-pressed="true"] { color:var(--qt-ink,#29242a); }
     .bookmark svg { width:14px;height:16px;display:block;stroke-linecap:round;stroke-linejoin:round; }
     .bookmark[aria-pressed="true"] svg { fill:currentColor; }
-    .answer { margin-top:5px;font-size:12px;line-height:1.6;max-height:4.8em;color:var(--qt-muted,#8c898e);white-space:pre-line;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden; }
+    .answer { margin-top:5px;font-size:12px;line-height:1.6;color:var(--qt-muted,#8c898e);white-space:pre-line;overflow-wrap:anywhere;display:block;overflow:hidden; }
     .answer strong { font-weight:700; }
     .answer code { font:11px/1.6 ui-monospace,Consolas,monospace;background:var(--qt-code,#efedef);border-radius:3px;padding:0 3px;white-space:pre-wrap; }
     .answer .code-block { display:block; }
@@ -69,7 +69,7 @@ function installQuestionTimeline(readState, options = {}) {
   let destroyed = false, loading = false, loadAbort = null, jumpAbort = null, frame = null, error = '', activeIndex = -1;
   let loadAttempted = false, loadSucceeded = false;
   let hideTimer = null, pointerMode = true, hiddenReason = '', marks = new Set(), hoverPosition = -1;
-  let renderedReply = null;
+  let renderedReply = null, fullAnswer = null, answerWidth = 0;
   const bookmarkCache = window.__questionTimelineBookmarkCache ||= new Map();
 
   function setHover(index, position = index) {
@@ -96,6 +96,10 @@ function installQuestionTimeline(readState, options = {}) {
     }, 220);
   }
   function readMarks() {
+    const store=window.__chatAnnotationStoreV1;
+    if(store?.syncBookmarks) {
+      try {marks=store.syncBookmarks(context,state?.entries||[]);return;} catch { /* Preserve existing marks if persistence is unavailable. */ }
+    }
     if (!bookmarkCache.has(context)) {
       let stored = [];
       try { const data = JSON.parse(localStorage.getItem('question-timeline:bookmarks:v1:' + context) || '[]'); if (Array.isArray(data)) stored = data.filter(key => typeof key === 'string'); } catch { /* Memory fallback if local storage is unavailable. */ }
@@ -183,6 +187,63 @@ function installQuestionTimeline(readState, options = {}) {
     }
     inline(answer, markdown.slice(0, 5000));
   }
+  function fitAnswer() {
+    // Measure visual rows in DOM order. A formula is one indivisible unit;
+    // intersecting row bands keeps a tall inline fraction with its text baseline.
+    const range = document.createRange(), rows = [];
+    let cut = null, closedRow = false;
+    const segments = new Intl.Segmenter(undefined, {granularity:'grapheme'});
+    function accept(rect, point, block = false) {
+      if (!rect.width || !rect.height) return true;
+      const row = rows.at(-1);
+      const overlap = row && Math.min(row.bottom, rect.bottom) - Math.max(row.top, rect.top);
+      if (!row || closedRow || block || overlap < Math.min(row.bottom - row.top, rect.height) * .4) {
+        if (rows.length === 3) { cut = point; return false; }
+        rows.push({top:rect.top, bottom:rect.bottom});
+      } else { row.top = Math.max(row.top,rect.top); row.bottom = Math.min(row.bottom,rect.bottom); }
+      closedRow = block;
+      return true;
+    }
+    function visit(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        for (const part of segments.segment(node.data)) {
+          if (!part.segment.trim()) continue;
+          range.setStart(node,part.index); range.setEnd(node,part.index + part.segment.length);
+          if (!accept(range.getBoundingClientRect(),{node,offset:part.index})) return false;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.localName === 'math' || node.classList.contains('math-display')) {
+          const point = {node:node.parentNode,offset:[...node.parentNode.childNodes].indexOf(node)};
+          return accept(node.getBoundingClientRect(),point,node.classList.contains('math-display'));
+        }
+        for (const child of [...node.childNodes]) if (!visit(child)) return false;
+      }
+      return true;
+    }
+    for (const node of [...answer.childNodes]) if (!visit(node)) break;
+    if (!cut) return;
+    range.setStart(cut.node,cut.offset); range.setEnd(answer,answer.childNodes.length); range.deleteContents();
+    // Remove the final line break before appending a continuation mark. If a
+    // whole formula fills the last row, omit the mark rather than crop it.
+    const walker = document.createTreeWalker(answer,NodeFilter.SHOW_TEXT);
+    let last = null, node;
+    while (node = walker.nextNode()) if (!node.parentElement.closest('math')) last = node;
+    if (last && !last.nextSibling) last.data = last.data.replace(/\s+$/,'');
+    const more = document.createElement('span'); more.textContent = '…'; answer.append(more);
+    const row = rows.at(-1);
+    const markFits = () => {
+      const rect = more.getBoundingClientRect();
+      return Math.min(row.bottom,rect.bottom) - Math.max(row.top,rect.top) >= Math.min(row.bottom-row.top,rect.height) * .4;
+    };
+    if (!markFits() && !answer.querySelector('math') && last?.isConnected) {
+      // Reserve a few glyphs for the continuation mark on an ordinary text row.
+      for (const part of [...segments.segment(last.data)].reverse()) {
+        last.deleteData(part.index,part.segment.length);
+        if (markFits()) break;
+      }
+    }
+    if (!markFits()) more.remove();
+  }
   function showPreview(index, message = '', keepHideTimer = false) {
     if (dock.hidden || !state?.entries[index]) return;
     if (!keepHideTimer) cancelHide();
@@ -190,7 +251,8 @@ function installQuestionTimeline(readState, options = {}) {
     const text = state.entries[index].text || '（图片、文件或其他输入）';
     const title = text.replace(/\s+/g, ' ').trim(), reply = state.entries[index].answer || '';
     if (question.textContent !== title) question.textContent = title;
-    if (renderedReply !== reply) { renderAnswer(reply); renderedReply = reply; }
+    const replyChanged = renderedReply !== reply;
+    if (replyChanged) { renderAnswer(reply); fullAnswer = answer.cloneNode(true); renderedReply = reply; }
     answer.hidden = !reply.trim();
     updateMarks();
     status.textContent = message;
@@ -200,6 +262,11 @@ function installQuestionTimeline(readState, options = {}) {
     const space = side === 'left' ? innerWidth - dockBounds.right - 16 : dockBounds.left - 16;
     const width = Math.min(320, Math.max(160, space));
     bubble.style.width = width + 'px';
+    if (!answer.hidden && (replyChanged || answerWidth !== answer.clientWidth)) {
+      answerWidth = answer.clientWidth;
+      answer.replaceChildren(...[...fullAnswer.childNodes].map(node=>node.cloneNode(true)));
+      fitAnswer();
+    }
     bubble.style.left = (side === 'left' ? Math.min(innerWidth - width - 8, dockBounds.right + 8) : Math.max(8, dockBounds.left - width - 8)) + 'px';
     bubble.style.top = Math.max(8, Math.min(innerHeight - bubble.offsetHeight - 8, bounds.top - 18)) + 'px';
   }
@@ -345,12 +412,13 @@ function installQuestionTimeline(readState, options = {}) {
       loadAbort?.abort(); jumpAbort?.abort(); loadAbort = jumpAbort = null;
       root?.removeEventListener('scroll', scheduleActive);
       root = next.root; context = next.contextId; signature = ''; activeIndex = -1;
-      readMarks(); resizeObserver.disconnect(); resizeObserver.observe(root);
+      resizeObserver.disconnect(); resizeObserver.observe(root);
       loading = false; loadAttempted = false; loadSucceeded = false; error = '';
       root.addEventListener('scroll', scheduleActive, { passive: true });
     }
     state = next;
-    render(); layout(); active();
+    readMarks();
+    render(); updateMarks(); layout(); active();
     updateFade();
     retry.disabled = loading;
     retry.setAttribute('data-tooltip', loading ? '正在加载历史' : error || '重新加载目录');
@@ -369,7 +437,38 @@ function installQuestionTimeline(readState, options = {}) {
     if (window.__questionTimelinePrototype === handle) delete window.__questionTimelinePrototype;
     state = null; buttons = [];
   }
-  const handle = { destroy, summary: () => ({ installed: !destroyed, toolVersion: options.toolVersion || null, visible: !dock.hidden, questionCount: state?.entries.length || 0,
+  function annotationNavigation(expectedContext) {
+    if (destroyed || !expectedContext?.startsWith('chatgpt:')) return null;
+    const current = readState();
+    if (!current || current.contextId !== expectedContext || !current.api?.scrollToKey) return null;
+    const targets = new Map(), ambiguous = new Set();
+    for (const entry of current.entries) for (const id of entry.assistantMessageIds || []) {
+      if (targets.has(id) && targets.get(id) !== entry.key) ambiguous.add(id);
+      targets.set(id, entry.key);
+    }
+    for (const id of ambiguous) targets.delete(id);
+    return {
+      has: id => targets.has(id),
+      async jump(id, signal) {
+        signal?.throwIfAborted();
+        const latest = annotationNavigation(expectedContext);
+        if (!latest?.has(id) || destroyed) return false;
+        const next = readState();
+        if (next?.contextId !== expectedContext || next.root !== current.root) return false;
+        const matches = next.entries.filter(entry => entry.assistantMessageIds?.includes(id));
+        if (matches.length !== 1) return false;
+          await next.api.scrollToKey(matches[0].key, undefined, {align:'top',signal});
+          signal?.throwIfAborted();
+          const after = readState();
+          return !destroyed && after?.contextId === expectedContext && after.root === current.root;
+      },
+    };
+  }
+  function syncBookmarks(expectedContext) {
+    const current=readState();
+    if(current?.contextId===expectedContext)window.__chatAnnotationStoreV1?.syncBookmarks(expectedContext,current.entries);
+  }
+  const handle = { destroy, annotationNavigation, syncBookmarks, summary: () => ({ installed: !destroyed, toolVersion: options.toolVersion || null, hasAnnotationNavigation:true, visible: !dock.hidden, questionCount: state?.entries.length || 0,
     complete: state?.complete === true, loading, loadSucceeded, hasError: !!error, hiddenReason, side,
     currentTurn: activeIndex >= 0 ? activeIndex + 1 : null, mathRendering:typeof options.renderMath === 'function' }) };
   window.__questionTimelinePrototype = handle;
@@ -386,7 +485,11 @@ function installQuestionTimeline(readState, options = {}) {
     const current = readState(), entry = state?.entries[hoverIndex];
     if (!entry || !current || current.contextId !== context || current.root !== root) { refresh(); return; }
     if (marks.has(entry.key)) marks.delete(entry.key); else marks.add(entry.key);
-    try { localStorage.setItem('question-timeline:bookmarks:v1:' + context, JSON.stringify([...marks])); } catch { /* The memory cache still supports marks within this session. */ }
+    try {
+      const store=window.__chatAnnotationStoreV1;
+      if(store?.toggleBookmark){store.toggleBookmark(context,entry);marks=store.syncBookmarks(context,current.entries);}
+      else localStorage.setItem('question-timeline:bookmarks:v1:' + context, JSON.stringify([...marks]));
+    } catch { /* The memory cache still supports marks within this session. */ }
     updateMarks();
   });
   rail.addEventListener('scroll', () => {

@@ -2,5 +2,6 @@
 /app/runtime/node.exe
 /app/SHA256SUMS.txt
 /dist/
+/tests/chat-tools-test-*/
 __pycache__/
 *.pyc
