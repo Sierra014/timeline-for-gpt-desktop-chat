@@ -32,7 +32,9 @@ sources = {
     "assets/pen.ico", "runtime/Node-LICENSE.txt",
 }
 files = {"app/" + file for file in sources}
-files.update({"README.md", "README-AGENT.md", "启动 对话工具.cmd", "启动 对话工具.vbs"})
+files.update({"README.md", "README-AGENT.md", "Start Chat Tools.vbs"})
+if target.exists():
+    shutil.rmtree(target)
 # The ZIP uses this allowlist even if dist contains files from an older build.
 for file in sorted(files):
     destination = target / file

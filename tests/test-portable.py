@@ -5,7 +5,7 @@ version=re.search(r"const version = '([^']+)'",(root/'app/chat-tools-monitor.cjs
 name='chat-tools-windows-x64-v'+version
 archive=root/'dist'/(name+'.zip')
 destination=Path(tempfile.mkdtemp(prefix='合并工具 迁移验证 ',dir=root/'dist'))
-expected={'README.md','README-AGENT.md','启动 对话工具.cmd','启动 对话工具.vbs'}|{
+expected={'README.md','README-AGENT.md','Start Chat Tools.vbs'}|{
  'app/'+file for file in ('chat-tools-monitor.cjs','chat-tools.ps1','question-timeline.cjs',
  'timeline-runtime.js','timeline-chat-adapter.cjs','timeline-native-resolver.cjs',
  'timeline-monitor.cjs','timeline-diagnostics.cjs','timeline-paths.cjs','timeline-compatibility.json',
@@ -27,7 +27,7 @@ for file in sorted(expected):
  if file.endswith('.cmd'):
   script=(relocated/file).read_bytes();assert b'%~dp0' in script and b'\r\n' in script
   assert b'D:\\' not in script and b'C:\\Users' not in script
-assert 'chat-tools.ps1' in (relocated/'启动 对话工具.vbs').read_text(encoding='ascii')
+assert 'chat-tools.ps1' in (relocated/'Start Chat Tools.vbs').read_text(encoding='ascii')
 control=subprocess.check_output(['powershell.exe','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',
  str(relocated/'app/chat-tools.ps1'),'-CheckOnly'],text=True)
 assert 'No client or worker launched' in control
