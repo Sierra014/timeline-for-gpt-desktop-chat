@@ -415,7 +415,7 @@ function installQuestionTimeline(readState, options = {}) {
     // Native ChatGPT uses column-reverse and negative scrollTop. Mounted DOM
     // coordinates also avoid errors from estimated heights in the virtual list.
     let index = -1, visible;
-    if (prefetched) {
+    if (prefetched && typeof prefetched === 'object' && prefetched.visible) {
       ({ index, visible } = prefetched);
     } else {
       const viewport = root.getBoundingClientRect();
@@ -445,7 +445,7 @@ function installQuestionTimeline(readState, options = {}) {
       else if (button.offsetTop + button.offsetHeight > rail.scrollTop + rail.clientHeight - 16) rail.scrollTop = button.offsetTop + button.offsetHeight - rail.clientHeight + 16;
     }
   }
-  function scheduleActive() { if (frame === null) frame = requestAnimationFrame(active); }
+  function scheduleActive() { if (frame === null) frame = requestAnimationFrame(() => active()); }
   function updateFade() {
     const overflow = rail.scrollHeight > rail.clientHeight + 1;
     rail.setAttribute('data-fade-top', String(overflow && rail.scrollTop > 1));
