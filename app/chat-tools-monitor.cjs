@@ -52,9 +52,18 @@ function createMonitor({dataFolder=path.join(__dirname,'data'),session='',timeli
       return {phase:result.phase,windows:result.windows,installed:result.installed,
         failed:result.failed,unsupported:result.unsupported || 0};
     };
+    const sanitizeUiTheme=raw=>{
+      if(!raw||typeof raw!=='object')return null;
+      const lang=raw.lang==='en'?'en':raw.lang==='zh'?'zh':null;
+      const hex=v=>typeof v==='string'&&/^#[\da-f]{6}$/i.test(v)?v.toLowerCase():null;
+      const bg=hex(raw.bg),surface=hex(raw.surface),ink=hex(raw.ink),muted=hex(raw.muted),border=hex(raw.border),accent=hex(raw.accent);
+      if(!lang||!bg||!surface||!ink||!muted||!border||!accent)return null;
+      return {lang,dark:!!raw.dark,bg,surface,ink,muted,border,accent};
+    };
     const now=Date.now(),tl=featureStatus(0),an=featureStatus(1);
-    const signature=JSON.stringify({workerPid:process.pid,version,timeline:tl,annotations:an});
-    const status={at:new Date(now).toISOString(),workerPid:process.pid,version,timeline:tl,annotations:an};
+    const uiTheme=sanitizeUiTheme(resultAt(1).uiTheme||resultAt(0).uiTheme);
+    const signature=JSON.stringify({workerPid:process.pid,version,timeline:tl,annotations:an,...(uiTheme?{uiTheme}:{})});
+    const status={at:new Date(now).toISOString(),workerPid:process.pid,version,timeline:tl,annotations:an,...(uiTheme?{uiTheme}:{})};
     const file=path.join(dataFolder,'combined-status.json');
     if (signature!==lastSignature || now-lastWriteAt>=20000 || !fs.existsSync(file)) {
       fs.mkdirSync(dataFolder,{recursive:true});

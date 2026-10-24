@@ -71,6 +71,115 @@ function installQuestionTimeline(readState, options = {}) {
   let hideTimer = null, pointerMode = true, hiddenReason = '', marks = new Set(), hoverPosition = -1;
   let renderedReply = null, fullAnswer = null, answerWidth = 0, answerFont = '';
   const bookmarkCache = window.__questionTimelineBookmarkCache ||= new Map();
+  const i18n = {
+    zh: {
+      reload: '重新加载目录', loadingHistory: '正在加载历史', loadFailed: '加载失败', loadTimeout: '加载超时',
+      toLeft: '移到左侧', toRight: '移到右侧', railLabel: '提问目录', previewLabel: '提问预览',
+      addBookmark: '添加书签', removeBookmark: '取消书签', mediaInput: '（图片、文件或其他输入）',
+      locating: '正在定位…', locateFailed: '定位未完成，请重试',
+      turnLabel: (i, text) => `第 ${i + 1} 次提问：${text.slice(0, 180) || '图片或文件输入'}`
+    },
+    en: {
+      reload: 'Reload timeline', loadingHistory: 'Loading history…', loadFailed: 'Failed to load', loadTimeout: 'Load timed out',
+      toLeft: 'Move to left', toRight: 'Move to right', railLabel: 'Prompt timeline', previewLabel: 'Prompt preview',
+      addBookmark: 'Add bookmark', removeBookmark: 'Remove bookmark', mediaInput: '(Image, file, or other input)',
+      locating: 'Locating…', locateFailed: 'Could not locate, please retry',
+      turnLabel: (i, text) => `Prompt ${i + 1}: ${text.slice(0, 180) || 'Image or file input'}`
+    }
+  };
+  let lang = 'zh', uiTheme = null;
+  function detectLang() {
+    const raw = (typeof document !== 'undefined' && document.documentElement?.lang) || (typeof navigator !== 'undefined' && navigator.language) || 'zh';
+    return /^zh\b/i.test(raw) ? 'zh' : 'en';
+  }
+  function t() { return i18n[lang] || i18n.zh; }
+  function parseRgb(value) {
+    const s = String(value || '').trim();
+    if (/^#[\da-f]{3}$/i.test(s)) return [1, 2, 3].map(i => parseInt(s[i] + s[i], 16));
+    if (/^#[\da-f]{6}$/i.test(s)) return [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16));
+    const m = s.match(/^rgba?\(([^)]+)\)$/i);
+    if (!m) return null;
+    const parts = m[1].trim().split(/[\s,/]+/).filter(Boolean).map(Number);
+    if (parts.length < 3 || parts.slice(0, 3).some(n => !Number.isFinite(n))) return null;
+    if (parts.length >= 4 && Number.isFinite(parts[3]) && parts[3] < 0.5) return null;
+    return parts.slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(n))));
+  }
+  function toHex(rgb) {
+    return '#' + rgb.map(n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')).join('');
+  }
+  function mixRgb(a, b, weightB) {
+    const w = Math.max(0, Math.min(1, weightB));
+    return [0, 1, 2].map(i => Math.round(a[i] * (1 - w) + b[i] * w));
+  }
+  function applyTheme(dark, rootRgb) {
+    const docEl = typeof document !== 'undefined' ? document.documentElement : null;
+    const docStyle = docEl ? getComputedStyle(docEl) : null;
+    const pick = keys => {
+      if (!docStyle?.getPropertyValue) return null;
+      for (const k of keys) { const c = parseRgb(docStyle.getPropertyValue(k)); if (c) return c; }
+      return null;
+    };
+    const surfaceRgb = pick(['--codex-base-surface', '--app-color-background-surface', '--color-surface']);
+    const underRgb = pick(['--app-color-background-surface-under']) || (surfaceRgb && typeof document !== 'undefined' && document.body ? parseRgb(getComputedStyle(document.body).backgroundColor) : null);
+    const inkRgb = pick(['--codex-base-ink', '--app-color-text-foreground', '--color-text']) || (Array.isArray(rootRgb) && rootRgb.length >= 3 ? rootRgb.slice(0, 3) : null);
+    const accentRgb = pick(['--codex-base-accent', '--app-color-border-focus', '--app-color-text-accent', '--color-ring']);
+    if (dark === undefined) {
+      if (surfaceRgb) dark = (surfaceRgb[0] + surfaceRgb[1] + surfaceRgb[2]) / 3 < 128;
+      else if (inkRgb) dark = (inkRgb[0] + inkRgb[1] + inkRgb[2]) / 3 > 150;
+      else dark = docEl?.getAttribute('data-theme') === 'dark' || !!docEl?.classList?.contains('dark');
+    }
+    let bg, ink, muted, line, mark, border, code, accent, under;
+    if (surfaceRgb || accentRgb) {
+      const sRgb = surfaceRgb || (dark ? [37, 36, 38] : [255, 253, 253]);
+      const iRgb = inkRgb || (dark ? [240, 237, 241] : [41, 36, 42]);
+      const aRgb = accentRgb || (dark ? [225, 71, 117] : [225, 71, 117]);
+      const uRgb = underRgb || mixRgb(iRgb, sRgb, 0.94);
+      bg = toHex(sRgb);
+      under = toHex(uRgb);
+      ink = toHex(iRgb);
+      muted = toHex(mixRgb(iRgb, sRgb, 0.48));
+      line = toHex(mixRgb(iRgb, sRgb, 0.72));
+      mark = toHex(accentRgb ? mixRgb(aRgb, iRgb, 0.28) : mixRgb(iRgb, sRgb, 0.38));
+      border = toHex(mixRgb(iRgb, sRgb, 0.84));
+      code = toHex(underRgb ? mixRgb(uRgb, iRgb, 0.04) : mixRgb(iRgb, sRgb, 0.92));
+      accent = toHex(aRgb);
+    } else {
+      bg = dark ? '#252426' : '#fffdfd';
+      under = dark ? '#1f1e20' : '#f6f2f2';
+      ink = dark ? '#f0edf1' : '#29242a';
+      muted = dark ? '#aaa5ad' : '#8c898e';
+      line = dark ? '#67636a' : '#ccc8cc';
+      mark = dark ? '#bfb7c7' : '#746d79';
+      border = dark ? '#49454c' : '#ddd8dd';
+      code = dark ? '#363237' : '#efedef';
+      accent = '#e14775';
+    }
+    host.style.setProperty('--qt-bg', bg);
+    host.style.setProperty('--qt-ink', ink);
+    host.style.setProperty('--qt-muted', muted);
+    host.style.setProperty('--qt-line', line);
+    host.style.setProperty('--qt-mark', mark);
+    host.style.setProperty('--qt-border', border);
+    host.style.setProperty('--qt-code', code);
+    uiTheme = { lang, dark: !!dark, bg: under, surface: bg, ink, muted, border, accent };
+  }
+  function applyLocale() {
+    const next = detectLang();
+    const changed = next !== lang;
+    lang = next;
+    if (uiTheme) uiTheme.lang = lang;
+    if (!changed && rail.getAttribute('aria-label') === t().railLabel) return;
+    const s = t();
+    rail.setAttribute('aria-label', s.railLabel);
+    bubble.setAttribute('aria-label', s.previewLabel);
+    retry.setAttribute('aria-label', s.reload);
+    retry.setAttribute('data-tooltip', loading ? s.loadingHistory : error || s.reload);
+    applySide();
+    updateMarks();
+    if (state?.entries) buttons.forEach((button, index) => {
+      if (state.entries[index]) button.setAttribute('aria-label', s.turnLabel(index, state.entries[index].text));
+    });
+  }
 
   function setHover(index, position = index) {
     const previous = hoverIndex;
@@ -108,11 +217,14 @@ function installQuestionTimeline(readState, options = {}) {
     marks = bookmarkCache.get(context);
   }
   function updateMarks() {
-    buttons.forEach((button, index) => button.setAttribute('data-bookmarked', String(marks.has(state.entries[index].key))));
+    if (state?.entries) buttons.forEach((button, index) => {
+      if (state.entries[index]) button.setAttribute('data-bookmarked', String(marks.has(state.entries[index].key)));
+    });
     const marked = !!state?.entries[hoverIndex] && marks.has(state.entries[hoverIndex].key);
+    const label = marked ? t().removeBookmark : t().addBookmark;
     bookmark.setAttribute('aria-pressed', String(marked));
-    bookmark.setAttribute('aria-label', marked ? '取消书签' : '添加书签');
-    bookmark.title = marked ? '取消书签' : '添加书签';
+    bookmark.setAttribute('aria-label', label);
+    bookmark.title = label;
   }
   function layout() {
     if (!root) return;
@@ -121,7 +233,8 @@ function installQuestionTimeline(readState, options = {}) {
     const left = Math.max(0, bounds.left + root.clientLeft), right = Math.min(innerWidth, bounds.right, bounds.left + root.clientLeft + root.clientWidth);
     const top = Math.max(0, bounds.top + root.clientTop), bottom = Math.min(innerHeight, bounds.bottom, bounds.top + root.clientTop + root.clientHeight);
     // Single pass over visible turn elements for both margin check and active turn tracking.
-    const indices = new Map(state.entries.map((entry, index) => [entry.key, index]));
+    const entries = typeof state !== 'undefined' && state?.entries ? state.entries : [];
+    const indices = new Map(entries.map((entry, index) => [entry.key, index]));
     const position = top + Math.min(60, (bottom - top) * .15);
     let contentRight = -Infinity, contentLeft = Infinity, hasContent = false;
     let nextActive = -1, nearest = Infinity;
@@ -132,7 +245,7 @@ function installQuestionTimeline(readState, options = {}) {
       hasContent = true;
       if (r.right > contentRight) contentRight = r.right;
       if (r.left < contentLeft) contentLeft = r.left;
-      const candidate = indices.get(element.getAttribute('data-turn-key'));
+      const candidate = indices.get(element.getAttribute?.('data-turn-key'));
       if (candidate !== undefined) {
         visible.add(candidate);
         const distance = position < r.top ? r.top - position : position > r.bottom ? position - r.bottom : 0;
@@ -154,14 +267,17 @@ function installQuestionTimeline(readState, options = {}) {
     host.style.fontWeight = rootStyle.fontWeight || 'inherit';
     const rgb = rootStyle.color.match(/[\d.]+/g)?.map(Number);
     const dark = rgb && (rgb[0] + rgb[1] + rgb[2]) / 3 > 150;
-    host.style.setProperty('--qt-bg', dark ? '#252426' : '#fffdfd');
-    host.style.setProperty('--qt-ink', dark ? '#f0edf1' : '#29242a');
-    host.style.setProperty('--qt-muted', dark ? '#aaa5ad' : '#8c898e');
-    host.style.setProperty('--qt-line', dark ? '#67636a' : '#ccc8cc');
-    host.style.setProperty('--qt-mark', dark ? '#bfb7c7' : '#746d79');
-    host.style.setProperty('--qt-border', dark ? '#49454c' : '#ddd8dd');
-    host.style.setProperty('--qt-code', dark ? '#363237' : '#efedef');
-    active({ index: nextActive, visible });
+    if (typeof applyTheme === 'function') applyTheme(dark, rgb);
+    else {
+      host.style.setProperty('--qt-bg', dark ? '#252426' : '#fffdfd');
+      host.style.setProperty('--qt-ink', dark ? '#f0edf1' : '#29242a');
+      host.style.setProperty('--qt-muted', dark ? '#aaa5ad' : '#8c898e');
+      host.style.setProperty('--qt-line', dark ? '#67636a' : '#ccc8cc');
+      host.style.setProperty('--qt-mark', dark ? '#bfb7c7' : '#746d79');
+      host.style.setProperty('--qt-border', dark ? '#49454c' : '#ddd8dd');
+      host.style.setProperty('--qt-code', dark ? '#363237' : '#efedef');
+    }
+    if (typeof active === 'function') active({ index: nextActive, visible });
   }
   function renderAnswer(markdown) {
     // Create formatting nodes explicitly. Conversation HTML and image/link URLs
@@ -268,7 +384,7 @@ function installQuestionTimeline(readState, options = {}) {
     if (dock.hidden || !state?.entries[index]) return;
     if (!keepHideTimer) cancelHide();
     setHover(index, keepHideTimer && index === hoverIndex ? hoverPosition : index);
-    const text = state.entries[index].text || '（图片、文件或其他输入）';
+    const text = state.entries[index].text || t().mediaInput;
     const title = text.replace(/\s+/g, ' ').trim(), reply = state.entries[index].answer || '';
     if (question.textContent !== title) question.textContent = title;
     const replyChanged = renderedReply !== reply;
@@ -338,7 +454,7 @@ function installQuestionTimeline(readState, options = {}) {
     dock.setAttribute('data-side', side);
     const toggle = find('.side');
     toggle.textContent = side === 'left' ? '›' : '‹';
-    const label = side === 'left' ? '移到右侧' : '移到左侧';
+    const label = side === 'left' ? t().toRight : t().toLeft;
     toggle.setAttribute('data-tooltip', label);
     toggle.setAttribute('aria-label', label);
     try { localStorage.setItem('question-timeline:side:v1', side); } catch { /* Current instance still remembers its side. */ }
@@ -351,7 +467,7 @@ function installQuestionTimeline(readState, options = {}) {
     jumpAbort?.abort();
     const controller = jumpAbort = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    showPreview(index, '正在定位…');
+    showPreview(index, t().locating);
     try {
       await current.api.scrollToKey(selected.key, undefined, { align: 'top', signal: controller.signal });
       controller.signal.throwIfAborted();
@@ -360,7 +476,7 @@ function installQuestionTimeline(readState, options = {}) {
       if (hoverIndex === index) showPreview(index);
     } catch (error) {
       if (!destroyed && jumpAbort === controller && context === expectedContext) options.onDiagnostic?.('jump', controller.signal.aborted ? 'jump-timeout' : 'jump-failed', error);
-      if (!destroyed && jumpAbort === controller && context === expectedContext && hoverIndex === index) showPreview(index, '定位未完成，请重试');
+      if (!destroyed && jumpAbort === controller && context === expectedContext && hoverIndex === index) showPreview(index, t().locateFailed);
     } finally { clearTimeout(timer); if (jumpAbort === controller) jumpAbort = null; }
   }
   function render() {
@@ -374,7 +490,7 @@ function installQuestionTimeline(readState, options = {}) {
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'tick';
       const line = document.createElement('span'); line.className = 'line'; line.setAttribute('aria-hidden', 'true'); button.append(line);
-      button.setAttribute('aria-label', `第 ${index + 1} 次提问：${entry.text.slice(0, 180) || '图片或文件输入'}`);
+      button.setAttribute('aria-label', t().turnLabel(index, entry.text));
       button.setAttribute('aria-describedby', 'qt-preview');
       button.addEventListener('mouseenter', () => { pointerMode = true; showPreview(index); });
       button.addEventListener('focus', () => showPreview(index));
@@ -409,8 +525,8 @@ function installQuestionTimeline(readState, options = {}) {
       if (!destroyed && context === expectedContext && root === expectedRoot) loadSucceeded = true;
     } catch (cause) {
       if (!destroyed && context === expectedContext && root === expectedRoot) options.onDiagnostic?.('history-load', controller.signal.aborted ? 'history-load-timeout' : 'history-load-failed', cause);
-      if (!destroyed && context === expectedContext && root === expectedRoot && !controller.signal.aborted) error = '加载失败';
-      else if (!destroyed && context === expectedContext && root === expectedRoot) error = '加载超时';
+      if (!destroyed && context === expectedContext && root === expectedRoot && !controller.signal.aborted) error = t().loadFailed;
+      else if (!destroyed && context === expectedContext && root === expectedRoot) error = t().loadTimeout;
     } finally {
       clearTimeout(timer);
       if (loadAbort === controller) { loadAbort = null; loading = false; if (!destroyed) refresh(); }
@@ -421,9 +537,11 @@ function installQuestionTimeline(readState, options = {}) {
   }
   function refreshState() {
     if (destroyed) return;
+    applyLocale();
     let next;
     try { next = readState(); } catch (error) { options.onDiagnostic?.('adapter', 'adapter-read-failed', error); next = null; }
     if (!next?.entries?.length) {
+      applyTheme();
       loadAbort?.abort(); jumpAbort?.abort();
       loadAbort = jumpAbort = null; loading = false;
       root?.removeEventListener('scroll', scheduleActive);
@@ -448,7 +566,7 @@ function installQuestionTimeline(readState, options = {}) {
     render(); updateMarks(); layout();
     updateFade();
     retry.disabled = loading;
-    retry.setAttribute('data-tooltip', loading ? '正在加载历史' : error || '重新加载目录');
+    retry.setAttribute('data-tooltip', loading ? t().loadingHistory : error || t().reload);
     if (hoverIndex >= 0) showPreview(hoverIndex, '', true);
     if (!dock.hidden && !loadAttempted && !state.complete) void loadHistory();
   }
@@ -498,7 +616,7 @@ function installQuestionTimeline(readState, options = {}) {
   }
   const handle = { destroy, annotationNavigation, syncBookmarks, summary: () => ({ installed: !destroyed, toolVersion: options.toolVersion || null, hasAnnotationNavigation:true, visible: !dock.hidden, questionCount: state?.entries.length || 0,
     complete: state?.complete === true, loading, loadSucceeded, hasError: !!error, hiddenReason, side,
-    currentTurn: activeIndex >= 0 ? activeIndex + 1 : null, mathRendering:typeof options.renderMath === 'function' }) };
+    currentTurn: activeIndex >= 0 ? activeIndex + 1 : null, mathRendering:typeof options.renderMath === 'function', uiTheme }) };
   window.__questionTimelinePrototype = handle;
   find('.side').addEventListener('click', () => { side = side === 'left' ? 'right' : 'left'; applySide(); hidePreview(); refresh(); });
   find('.retry').addEventListener('click', () => { loadAttempted = false; error = ''; refresh(); });

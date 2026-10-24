@@ -31,7 +31,8 @@ function createMonitor({scan = pass, dataFolder = path.join(__dirname,'data'), s
       const failed = windows.filter(window => window.failed).length;
       const unsupported = windows.filter(window => window.supported && !window.supportsHighlights).length;
       const phase = !prefs.enabled ? 'paused' : failed || unsupported ? 'adapter-error' : installed ? 'connected' : windows.some(window => window.waitingForApplication) ? 'waiting-application' : 'waiting-conversation';
-      report = {phase,version:report.version,windows:windows.length,installed,failed,unsupported};
+      const uiTheme = windows.map(window => window.uiTheme || window.runtime?.uiTheme).find(Boolean) || null;
+      report = {phase,version:report.version,windows:windows.length,installed,failed,unsupported,...(uiTheme ? {uiTheme} : {})};
     } catch { report = {phase:prefs.enabled ? 'waiting-debug' : 'paused',windows:0,installed:0,failed:0,endpointReady:false}; }
     const now = Date.now(), signature = JSON.stringify({workerPid:process.pid,enabled:prefs.enabled,...report});
     const status = {at:new Date(now).toISOString(),workerPid:process.pid,enabled:prefs.enabled,...report};

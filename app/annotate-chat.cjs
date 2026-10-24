@@ -29,11 +29,38 @@ function applicationReady() {
 }
 function inspect(readSurface, readReady) {
   const surface = readSurface();
+  const runtime = window.__chatAnnotationsV1?.summary() || null;
+  let uiTheme = runtime?.uiTheme || window.__questionTimelinePrototype?.summary?.()?.uiTheme || null;
+  if (!uiTheme && typeof document !== 'undefined' && document.documentElement) {
+    const rawLang = document.documentElement.lang || (typeof navigator !== 'undefined' && navigator.language) || 'zh';
+    const lang = /^zh\b/i.test(rawLang) ? 'zh' : 'en';
+    const docStyle = getComputedStyle(document.documentElement);
+    const parseRgb = v => {
+      const s = String(v || '').trim();
+      if (/^#[\da-f]{3}$/i.test(s)) return [1, 2, 3].map(i => parseInt(s[i] + s[i], 16));
+      if (/^#[\da-f]{6}$/i.test(s)) return [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16));
+      const m = s.match(/^rgba?\(([^)]+)\)$/i);
+      if (!m) return null;
+      const p = m[1].trim().split(/[\s,/]+/).filter(Boolean).map(Number);
+      if (p.length < 3 || p.slice(0, 3).some(n => !Number.isFinite(n))) return null;
+      if (p.length >= 4 && Number.isFinite(p[3]) && p[3] < 0.5) return null;
+      return p.slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(n))));
+    };
+    const toHex = rgb => '#' + rgb.map(n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')).join('');
+    const mix = (a, b, w) => [0, 1, 2].map(i => Math.round(a[i] * (1 - w) + b[i] * w));
+    const pick = keys => { for (const k of keys) { const c = parseRgb(docStyle.getPropertyValue(k)); if (c) return c; } return null; };
+    const sRgb = pick(['--codex-base-surface', '--app-color-background-surface', '--color-surface']) || (document.body ? parseRgb(getComputedStyle(document.body).backgroundColor) : null) || [255, 253, 253];
+    const uRgb = pick(['--app-color-background-surface-under']) || (document.body ? parseRgb(getComputedStyle(document.body).backgroundColor) : null) || sRgb;
+    const iRgb = pick(['--codex-base-ink', '--app-color-text-foreground', '--color-text']) || (document.body ? parseRgb(getComputedStyle(document.body).color) : null) || [41, 38, 43];
+    const aRgb = pick(['--codex-base-accent', '--app-color-border-focus', '--app-color-text-accent', '--color-ring']) || [232, 62, 118];
+    const dark = (sRgb[0] + sRgb[1] + sRgb[2]) / 3 < 128;
+    uiTheme = { lang, dark, bg: toHex(uRgb), surface: toHex(sRgb), ink: toHex(iRgb), muted: toHex(mix(iRgb, sRgb, 0.48)), border: toHex(mix(iRgb, sRgb, dark ? 0.78 : 0.85)), accent: toHex(aRgb) };
+  }
   return {applicationReady:readReady(), supported:!!surface, supportsHighlights:!!CSS.highlights && typeof Highlight === 'function',
     annotationHosts:document.querySelectorAll('#chat-annotations-v1').length,
     messages:surface?.messages.length || 0, uniqueMessages:surface ? new Set(surface.messages.map(message => message.messageId)).size : 0,
     mode:surface?.contextId.startsWith('codex:') ? 'codex' : surface ? 'chatgpt' : 'unrecognized',
-    runtime:window.__chatAnnotationsV1?.summary() || null,
+    runtime, uiTheme,
     lifecycle:window.__chatAnnotationLifecycleV1?.summary() || null};
 }
 async function pass(mode) {
@@ -65,13 +92,13 @@ async function pass(mode) {
       if (mode !== 'check' && !report.supported && report.annotationHosts) {
         // Keep lifecycle observation on blank/settings pages, where sidebar deletion is still possible.
         await evaluate(target,'('+removeAnnotations.toString()+')(true)');
-        windows.push({window:index + 1, mode:report.mode, removed:true, waitingForConversation:true}); continue;
+        windows.push({window:index + 1, mode:report.mode, removed:true, waitingForConversation:true, uiTheme:report.uiTheme}); continue;
       }
       if (mode === 'check' || !report.supported || !report.supportsHighlights || (mode === 'watch' && report.runtime?.installed && report.runtime.version === version)) {
         windows.push({window:index + 1, ...report}); continue;
       }
       const result = await evaluate(target, '(' + installChatAnnotations.toString() + ')(' + readAnnotationSurface.toString() + ')');
-      windows.push({window:index + 1, mode:report.mode, ...result});
+      windows.push({window:index + 1, mode:report.mode, uiTheme:report.uiTheme, ...result});
     } catch {windows.push({window:index + 1, failed:true});}
   }
   return {checkedAt:new Date().toISOString(), version, windows};

@@ -59,6 +59,81 @@ function installChatAnnotations(readSurface, options = {}) {
   const quoteLayouts = new WeakMap(), segmenter = new Intl.Segmenter(undefined,{granularity:'grapheme'});
   let annotationMode = false;
   let historyReady = new Set(), navigationAbort = null;
+  const i18n = {
+    zh: {
+      annotate: '标注', nav: '标注导航', cardLabel: '本地标注', close: '关闭标注卡片',
+      noteLabel: '我的注释', notePlaceholder: '添加注释', delete: '删除', save: '保存标注',
+      empty: '暂无标注', sep: '，',
+      swatches: { yellow: '黄色高亮', green: '绿色高亮', pink: '粉色高亮' },
+      inHistory: '历史待定位', unloaded: '原文尚未加载', changed: '原文已变化或定位不唯一',
+      unannotatable: '原文暂不可标注', located: '已定位',
+      readFailed: '本地标注无法读取，本次会话不覆盖原数据。',
+      storageUnavailable: '标注存储不可用，未保存。请检查存储后重新加载标注工具。',
+      saveFailed: '保存失败，标注卡片已保留。请检查本地存储空间。',
+      locateFailed: '原文尚未恢复或已变化，未定位标注。',
+      historyFailed: '历史定位未完成，请稍后重试。'
+    },
+    en: {
+      annotate: 'Annotate', nav: 'Annotations', cardLabel: 'Local annotation', close: 'Close',
+      noteLabel: 'My note', notePlaceholder: 'Add a note…', delete: 'Delete', save: 'Save',
+      empty: 'No annotations yet', sep: ', ',
+      swatches: { yellow: 'Yellow highlight', green: 'Green highlight', pink: 'Pink highlight' },
+      inHistory: 'In history', unloaded: 'Source not loaded', changed: 'Source changed or ambiguous',
+      unannotatable: 'Cannot highlight source', located: 'Located',
+      readFailed: 'Could not read local annotations; existing data will not be overwritten.',
+      storageUnavailable: 'Annotation storage unavailable; not saved. Check storage and reload.',
+      saveFailed: 'Save failed; card kept open. Please check local storage space.',
+      locateFailed: 'Source text not restored or changed; could not locate annotation.',
+      historyFailed: 'History jump incomplete, please retry.'
+    }
+  };
+  let lang = 'zh', uiTheme = null;
+  function detectLang() {
+    const raw = (typeof document !== 'undefined' && document.documentElement?.lang) || (typeof navigator !== 'undefined' && navigator.language) || 'zh';
+    return /^zh\b/i.test(raw) ? 'zh' : 'en';
+  }
+  function t() { return i18n[lang] || i18n.zh; }
+  function applyLocale() {
+    const next = detectLang();
+    const changed = next !== lang;
+    lang = next;
+    if (uiTheme) uiTheme.lang = lang;
+    const s = t();
+    if (!changed && $('.mode-toggle').getAttribute('aria-label') === s.annotate) return;
+    $('.mode-toggle').setAttribute('aria-label', s.annotate);
+    $('.list-open').setAttribute('aria-label', s.nav);
+    card.setAttribute('aria-label', s.cardLabel);
+    $('.close').setAttribute('aria-label', s.close);
+    noteInput.setAttribute('aria-label', s.noteLabel);
+    noteInput.setAttribute('placeholder', s.notePlaceholder);
+    $('.delete').textContent = s.delete;
+    $('.save').textContent = s.save;
+    navigator.setAttribute('aria-label', s.nav);
+    tooltip.textContent = s.annotate;
+    for (const button of shadow.querySelectorAll('.swatch')) {
+      const c = button.dataset.color;
+      if (s.swatches[c]) button.setAttribute('aria-label', s.swatches[c]);
+    }
+    listSignature = '';
+  }
+  function parseRgb(value) {
+    const s = String(value || '').trim();
+    if (/^#[\da-f]{3}$/i.test(s)) return [1, 2, 3].map(i => parseInt(s[i] + s[i], 16));
+    if (/^#[\da-f]{6}$/i.test(s)) return [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16));
+    const m = s.match(/^rgba?\(([^)]+)\)$/i);
+    if (!m) return null;
+    const parts = m[1].trim().split(/[\s,/]+/).filter(Boolean).map(Number);
+    if (parts.length < 3 || parts.slice(0, 3).some(n => !Number.isFinite(n))) return null;
+    if (parts.length >= 4 && Number.isFinite(parts[3]) && parts[3] < 0.5) return null;
+    return parts.slice(0, 3).map(n => Math.max(0, Math.min(255, Math.round(n))));
+  }
+  function toHex(rgb) {
+    return '#' + rgb.map(n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')).join('');
+  }
+  function mixRgb(a, b, weightB) {
+    const w = Math.max(0, Math.min(1, weightB));
+    return [0, 1, 2].map(i => Math.round(a[i] * (1 - w) + b[i] * w));
+  }
   window.__chatAnnotationsV1 = {summary, destroy};
   function restoreMenus() {
     for (const menu of hiddenMenus) menu.removeAttribute('data-chat-annotations-menu-hidden');
@@ -262,13 +337,13 @@ function installChatAnnotations(readSurface, options = {}) {
       const data = store ? store.read(context) : raw ? JSON.parse(raw) : {schema: 1, records: []};
       if (data.schema !== 1 || !Array.isArray(data.records) || data.records.some(record => !valid(record))) throw Error('Invalid annotations');
       records = data.records;
-    } catch { records = []; saved = false; toast('本地标注无法读取，本次会话不覆盖原数据。'); }
+    } catch { records = []; saved = false; toast(t().readFailed); }
     memory.set(context, {records, saved});
   }
   function persist(next) {
-    if (!saved) { toast('标注存储不可用，未保存。请检查存储后重新加载标注工具。'); return false; }
+    if (!saved) { toast(t().storageUnavailable); return false; }
     try { if(store)store.write(context,next);else localStorage.setItem(storageKey(), JSON.stringify({schema: 1, records: next})); }
-    catch { toast('保存失败，标注卡片已保留。请检查本地存储空间。'); return false; }
+    catch { toast(t().saveFailed); return false; }
     records = next; memory.set(context, {records, saved}); return true;
   }
   function toast(message) {
@@ -276,21 +351,67 @@ function installChatAnnotations(readSurface, options = {}) {
     toastTimer = setTimeout(() => { $('.toast').hidden = true; }, 3200);
   }
   function theme() {
-    const rootStyle = getComputedStyle(surface.root);
-    host.style.fontFamily = rootStyle.fontFamily || 'inherit';
-    host.style.setProperty('--annotation-text-font', rootStyle.fontFamily || 'inherit');
-    host.style.fontWeight = rootStyle.fontWeight || 'inherit';
-    const color = rootStyle.color.match(/\d+(?:\.\d+)?/g) || [];
-    const dark = Number(color[0]) + Number(color[1]) + Number(color[2]) > 480;
-    const variables = dark ? {paper:'#282629',ink:'#f1edf2',line:'#514c54',muted:'#aaa2af',soft:'#363138','dock-hover':'#444045','dock-active':'#58434d','scroll-thumb':'#514c54','scroll-hover':'#716a72'} :
-      {paper:'#fffdfd',ink:'#29262b',line:'#dedade',muted:'#87818a',soft:'#f3f0f3','dock-hover':'#e9e5e8','dock-active':'#eadce2','scroll-thumb':'#dedbde','scroll-hover':'#c6c0c5'};
+    const docEl = typeof document !== 'undefined' ? document.documentElement : null;
+    const docStyle = docEl ? getComputedStyle(docEl) : null;
+    const pick = keys => {
+      if (!docStyle?.getPropertyValue) return null;
+      for (const k of keys) { const c = parseRgb(docStyle.getPropertyValue(k)); if (c) return c; }
+      return null;
+    };
+    const surfaceRgb = pick(['--codex-base-surface', '--app-color-background-surface', '--color-surface']);
+    const underRgb = pick(['--app-color-background-surface-under']) || (surfaceRgb && typeof document !== 'undefined' && document.body ? parseRgb(getComputedStyle(document.body).backgroundColor) : null);
+    const accentRgb = pick(['--codex-base-accent', '--app-color-border-focus', '--app-color-text-accent', '--color-ring']);
+    let rootRgb = null, dark = false;
+    if (surface?.root) {
+      const rootStyle = getComputedStyle(surface.root);
+      host.style.fontFamily = rootStyle.fontFamily || 'inherit';
+      host.style.setProperty('--annotation-text-font', rootStyle.fontFamily || 'inherit');
+      host.style.fontWeight = rootStyle.fontWeight || 'inherit';
+      const color = rootStyle.color.match(/\d+(?:\.\d+)?/g) || [];
+      if (color.length >= 3) {
+        rootRgb = [Number(color[0]), Number(color[1]), Number(color[2])];
+        dark = rootRgb[0] + rootRgb[1] + rootRgb[2] > 480;
+      }
+    }
+    const inkRgb = pick(['--codex-base-ink', '--app-color-text-foreground', '--color-text']) || rootRgb;
+    if (!surface?.root) {
+      if (surfaceRgb) dark = (surfaceRgb[0] + surfaceRgb[1] + surfaceRgb[2]) / 3 < 128;
+      else if (inkRgb) dark = inkRgb[0] + inkRgb[1] + inkRgb[2] > 480;
+      else dark = docEl?.getAttribute('data-theme') === 'dark' || !!docEl?.classList?.contains('dark');
+    }
+    let variables, underHex;
+    if (surfaceRgb || accentRgb) {
+      const sRgb = surfaceRgb || (dark ? [40, 38, 41] : [255, 253, 253]);
+      const iRgb = inkRgb || (dark ? [241, 237, 242] : [41, 38, 43]);
+      const aRgb = accentRgb || [232, 62, 118];
+      const uRgb = underRgb || mixRgb(iRgb, sRgb, dark ? 0.90 : 0.94);
+      underHex = toHex(uRgb);
+      variables = {
+        paper: toHex(sRgb),
+        ink: toHex(iRgb),
+        line: toHex(mixRgb(iRgb, sRgb, dark ? 0.78 : 0.85)),
+        muted: toHex(mixRgb(iRgb, sRgb, 0.48)),
+        soft: toHex(underRgb ? mixRgb(uRgb, sRgb, 0.25) : mixRgb(iRgb, sRgb, dark ? 0.90 : 0.94)),
+        'annotation-accent': toHex(aRgb),
+        'dock-hover': toHex(mixRgb(iRgb, sRgb, dark ? 0.84 : 0.89)),
+        'dock-active': toHex(mixRgb(aRgb, sRgb, dark ? 0.76 : 0.86)),
+        'scroll-thumb': toHex(mixRgb(iRgb, sRgb, dark ? 0.78 : 0.85)),
+        'scroll-hover': toHex(mixRgb(iRgb, sRgb, dark ? 0.65 : 0.74)),
+      };
+    } else {
+      underHex = dark ? '#1f1e20' : '#f6f2f2';
+      variables = dark ? {paper:'#282629',ink:'#f1edf2',line:'#514c54',muted:'#aaa2af',soft:'#363138','annotation-accent':'#e83e76','dock-hover':'#444045','dock-active':'#58434d','scroll-thumb':'#514c54','scroll-hover':'#716a72'} :
+        {paper:'#fffdfd',ink:'#29262b',line:'#dedade',muted:'#87818a',soft:'#f3f0f3','annotation-accent':'#e83e76','dock-hover':'#e9e5e8','dock-active':'#eadce2','scroll-thumb':'#dedbde','scroll-hover':'#c6c0c5'};
+    }
     for (const [key, value] of Object.entries(variables)) host.style.setProperty('--' + key, value);
+    uiTheme = { lang, dark: !!dark, bg: underHex, surface: variables.paper, ink: variables.ink, muted: variables.muted, border: variables.line, accent: variables['annotation-accent'] };
   }
   function refresh() {
     refreshTimer = 0; if (destroyed) return;
+    applyLocale();
     let next;
     try { next = readSurface(); } catch { next = null; }
-    if (!next) { navigationAbort?.abort(); setAnnotationMode(false); surface = null; matches = new Map(); historyReady.clear(); dock.hidden = true; for (const name of names) CSS.highlights.delete(name); return; }
+    if (!next) { theme(); navigationAbort?.abort(); setAnnotationMode(false); surface = null; matches = new Map(); historyReady.clear(); dock.hidden = true; for (const name of names) CSS.highlights.delete(name); return; }
     if (surface?.root !== next.root || context !== next.contextId) navigationAbort?.abort();
     surface = next;
     if (context !== surface.contextId || dirtyContexts.has(surface.contextId)) {
@@ -304,20 +425,21 @@ function installChatAnnotations(readSurface, options = {}) {
     if (records.length) {
       const messageMap = new Map(surface.messages.map(message => [message.messageId, message]));
       const snapshots = new Map();
+      const s = t();
       for (const record of records) {
         const message = messageMap.get(record.messageId);
         if (!message) {
           if (surface.navigation?.has(record.messageId)) historyReady.add(record.id);
-          statuses.set(record.id, historyReady.has(record.id) ? '历史待定位' : '原文尚未加载'); continue;
+          statuses.set(record.id, historyReady.has(record.id) ? s.inHistory : s.unloaded); continue;
         }
         let current = snapshots.get(record.messageId);
         if (!current) { current = {message, legacy:null, math:null}; snapshots.set(record.messageId, current); }
         const data = record.mathAnchors === true ? (current.math ||= snapshot(current.message, true)) : (current.legacy ||= snapshot(current.message));
         const start = locate(record, data);
-        if (start < 0) { statuses.set(record.id, '原文已变化或定位不唯一'); continue; }
+        if (start < 0) { statuses.set(record.id, s.changed); continue; }
         const range = makeRange(data, start, start + record.exact.length);
-        if (!range) { statuses.set(record.id, '原文暂不可标注'); continue; }
-        matches.set(record.id, range); ranges.get(record.color).push(range); statuses.set(record.id, '已定位');
+        if (!range) { statuses.set(record.id, s.unannotatable); continue; }
+        matches.set(record.id, range); ranges.get(record.color).push(range); statuses.set(record.id, s.located);
       }
     }
     for (const color of colors) CSS.highlights.set('chat-annotations-' + color, new Highlight(...ranges.get(color)));
@@ -536,26 +658,27 @@ function installChatAnnotations(readSurface, options = {}) {
         if (surface.messages.some(message => message.messageId === record.messageId)) break;
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      if (stillCurrent()) toast('原文尚未恢复或已变化，未定位标注。');
+      if (stillCurrent()) toast(t().locateFailed);
     } catch {
-      if (stillCurrent() && navigationAbort === controller) toast('历史定位未完成，请稍后重试。');
+      if (stillCurrent() && navigationAbort === controller) toast(t().historyFailed);
     } finally {
       clearTimeout(deadline);
       if (navigationAbort === controller) navigationAbort = null;
     }
   }
   function renderList() {
-    const signature = JSON.stringify(records.map(record => [record.id, record.exact, record.note, matches.has(record.id), historyReady.has(record.id), statuses.get(record.id)]));
+    const signature = JSON.stringify([lang, ...records.map(record => [record.id, record.exact, record.note, matches.has(record.id), historyReady.has(record.id), statuses.get(record.id)])]);
     if (signature === listSignature && list.childNodes.length) return;
     listSignature = signature;
     list.replaceChildren();
-    if (!records.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '暂无标注'; list.append(empty); return; }
+    const s = t();
+    if (!records.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = s.empty; list.append(empty); return; }
     for (const record of [...records].reverse()) {
       const button = document.createElement('button'); button.className = 'item';
       const quote = document.createElement('span'); quote.className = 'item-quote'; appendQuote(quote, record);
       const note = document.createElement('span'); note.className = 'item-note'; appendQuote(note,{exact:record.note});
       const located = matches.has(record.id) || historyReady.has(record.id); button.dataset.unresolved = String(!located); button.disabled = !located;
-      if (!located) button.setAttribute('aria-label', record.exact + '，' + (statuses.get(record.id) || '原文尚未加载'));
+      if (!located) button.setAttribute('aria-label', record.exact + s.sep + (statuses.get(record.id) || s.unloaded));
       button.append(quote); if (record.note.trim()) button.append(note);
       button.onclick = () => { void jumpAnnotation(record); }; list.append(button);
     }
@@ -564,7 +687,7 @@ function installChatAnnotations(readSurface, options = {}) {
   for (const color of colors) {
     const button = document.createElement('button'); button.className = 'swatch'; button.dataset.color = color;
     button.style.backgroundColor = {yellow:'#efd477',green:'#89d7b0',pink:'#eda6c6'}[color];
-    button.setAttribute('aria-label', {yellow:'黄色高亮',green:'绿色高亮',pink:'粉色高亮'}[color]);
+    button.setAttribute('aria-label', t().swatches[color]);
     button.onclick = () => choose(color); $('.palette').append(button);
   }
   function newAnnotation(rect) {
@@ -635,7 +758,7 @@ function installChatAnnotations(readSurface, options = {}) {
   timer = setInterval(() => { if (!document.hidden) refresh(); }, 1500);
   function summary() { return {installed:ready && !destroyed, version, messages:surface?.messages.length || 0, annotations:records.length,
     located:matches.size, historyNavigable:historyReady.size, unresolved:records.length - matches.size, storageAvailable:saved,
-    mode:surface?.contextId.split(':')[0] || null, annotationMode}; }
+    mode:surface?.contextId.split(':')[0] || null, annotationMode, uiTheme}; }
   function destroy() {
     navigationAbort?.abort();
     destroyed = true; observer?.disconnect(); clearInterval(timer); clearTimeout(refreshTimer); clearTimeout(toastTimer); clearTimeout(hoverTimer); cancelAnimationFrame(frame); cancelAnimationFrame(hoverFrame);

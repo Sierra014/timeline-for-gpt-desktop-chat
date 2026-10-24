@@ -122,7 +122,7 @@ $script:timelineBox.Text = '自动加载对话索引'; $script:timelineBox.Check
 $script:timelineBox.Location = New-Object Drawing.Point(25,195)
 $script:timelineBox.Size = New-Object Drawing.Size(215,25)
 $script:form.Controls.Add($script:timelineBox)
-[void](Add-Label '索引位置' 25 234 90 25)
+$script:sideLabel = Add-Label '索引位置' 25 234 90 25
 $script:sideBox = New-Object Windows.Forms.ComboBox
 $script:sideBox.DropDownStyle = 'DropDownList'
 $script:sideBox.Location = New-Object Drawing.Point(119,231)
@@ -130,6 +130,55 @@ $script:sideBox.Size = New-Object Drawing.Size(150,26)
 [void]$script:sideBox.Items.AddRange(@('沿用原偏好','左侧','右侧'))
 $script:sideBox.SelectedIndex = switch ($script:preferences.side) { 'left' {1}; 'right' {2}; default {0} }
 $script:form.Controls.Add($script:sideBox)
+
+$script:lang = 'zh'
+$script:updatingLocale = $false
+$script:lastThemeSignature = ''
+$script:i18n = @{
+    zh = @{
+        title = '对话工具'; caption = '索引与标注 · v0.1.15'; starting = '正在启动…'
+        defaultDetail = 'ChatGPT 加载索引与标注，Codex 加载标注。'
+        autoAnnotate = '自动加载标注'; autoTimeline = '自动加载对话索引'; sideLabel = '索引位置'
+        sideItems = @('沿用原偏好','左侧','右侧')
+        openClient = '打开客户端'; reload = '重新加载'; removePause = '移除并暂停'
+        userGuide = '使用说明'; diagnostics = '诊断目录'; hideToTray = '收起到托盘'
+        menuItems = @('显示运行窗口','打开客户端','重新加载','退出')
+        featureTimeline = '对话索引'; featureAnnotations = '标注'
+        stateWaitingTarget = '等待适用对话'; statePaused = '已暂停'; stateWaitingConv = '等待打开对话'
+        stateWaitingHistory = '目录已加载，历史待重试'; stateWaitingApp = '等待客户端启动'
+        stateAdapterError = '部分窗口加载失败'; stateWaitingDebug = '等待调试连接'
+        waitingLocalDebug = '等待本机调试连接'
+        waitingLocalDebugDetail = '点击“打开客户端”；已普通启动时需要先从客户端托盘退出。'
+        connectedDetail = '新窗口与页面刷新会自动加载。'
+        retryDetail = '正在重试；排查步骤见 README-AGENT.md。'
+        launchIncomplete = '启动未完成；若客户端已普通启动，请从托盘退出后再点“打开客户端”。'
+        workerExited = '监视进程已退出'; workerExitedDetail = '正在自动恢复监视；详情见诊断目录。'
+        startupFailed = '助手启动失败，请查看目录权限及 README-AGENT.md。'
+        legacyRunning = '请先从托盘退出旧 Timeline 和标注助手，再启动合并版。已保存的书签与标注会保留。'
+    }
+    en = @{
+        title = 'Chat Tools'; caption = 'Timeline & Annotations · v0.1.15'; starting = 'Starting…'
+        defaultDetail = 'Timeline & Annotations in ChatGPT; Annotations in Codex.'
+        autoAnnotate = 'Auto-load Annotations'; autoTimeline = 'Auto-load Timeline'; sideLabel = 'Rail side'
+        sideItems = @('Keep preference','Left','Right')
+        openClient = 'Open Client'; reload = 'Reload'; removePause = 'Remove & Pause'
+        userGuide = 'User Guide'; diagnostics = 'Diagnostics'; hideToTray = 'Hide to Tray'
+        menuItems = @('Show Window','Open Client','Reload','Exit')
+        featureTimeline = 'Timeline'; featureAnnotations = 'Annotations'
+        stateWaitingTarget = 'Waiting for supported chat'; statePaused = 'Paused'; stateWaitingConv = 'Waiting for conversation'
+        stateWaitingHistory = 'Loaded, history pending retry'; stateWaitingApp = 'Waiting for client startup'
+        stateAdapterError = 'Failed in some windows'; stateWaitingDebug = 'Waiting for debug connection'
+        waitingLocalDebug = 'Waiting for local debug connection'
+        waitingLocalDebugDetail = 'Click "Open Client"; if already running normally, exit it from tray first.'
+        connectedDetail = 'New windows and page refreshes load automatically.'
+        retryDetail = 'Retrying; see README-AGENT.md for troubleshooting.'
+        launchIncomplete = 'Launch incomplete; if client is running normally, exit it from tray first.'
+        workerExited = 'Monitor process exited'; workerExitedDetail = 'Recovering monitor automatically; see Diagnostics for details.'
+        startupFailed = 'Helper startup failed; check folder permissions and README-AGENT.md.'
+        legacyRunning = 'Please exit the legacy Timeline and Annotations helpers from the tray first. Saved data will be kept.'
+    }
+}
+function Get-Strings { return $script:i18n[$script:lang] }
 
 function Save-Preferences {
     [void][IO.Directory]::CreateDirectory($script:dataFolder)
@@ -206,21 +255,23 @@ $script:timelineBox.Add_CheckedChanged({
     Save-Preferences; Start-Worker
 })
 $script:sideBox.Add_SelectedIndexChanged({
+    if ($script:updatingLocale) { return }
     $script:preferences.side = @($null,'left','right')[$script:sideBox.SelectedIndex]
     $script:preferences.timelineGeneration++; Save-Preferences; Start-Worker
 })
-[void](Add-Button '打开客户端' 24 280 135 { Open-Client })
+$btnOpen = Add-Button '打开客户端' 24 280 135 { Open-Client }
 $reload = Add-Button '重新加载' 170 280 135 { Reload-Tools }
 $reload.BackColor = [Drawing.Color]::FromArgb(232,62,118); $reload.ForeColor = [Drawing.Color]::White
 $reload.FlatAppearance.BorderSize = 0
-[void](Add-Button '移除并暂停' 316 280 150 { Remove-Tools })
-[void](Add-Button '使用说明' 24 336 135 {
+$btnRemove = Add-Button '移除并暂停' 316 280 150 { Remove-Tools }
+$btnGuide = Add-Button '使用说明' 24 336 135 {
     $readme = Join-Path $PSScriptRoot 'README.md'
     if (!(Test-Path -LiteralPath $readme)) { $readme = Join-Path $PSScriptRoot '..\README.md' }
     Invoke-Item -LiteralPath $readme
-})
-[void](Add-Button '诊断目录' 170 336 135 { Invoke-Item -LiteralPath $script:dataFolder })
-[void](Add-Button '收起到托盘' 316 336 150 { $script:form.Hide() })
+}
+$btnDiag = Add-Button '诊断目录' 170 336 135 { Invoke-Item -LiteralPath $script:dataFolder }
+$btnHide = Add-Button '收起到托盘' 316 336 150 { $script:form.Hide() }
+$script:ordinaryButtons = @($btnOpen, $btnRemove, $btnGuide, $btnDiag, $btnHide)
 $script:notify = New-Object Windows.Forms.NotifyIcon
 $script:notify.Icon = $script:form.Icon; $script:notify.Text = 'Chat Tools'
 Apply-Icon
@@ -234,6 +285,92 @@ foreach ($entry in @(
     [void]$script:menu.MenuItems.Add($item)
 }
 $script:notify.ContextMenu = $script:menu
+
+function ConvertTo-Color([string]$hex, [Drawing.Color]$fallback) {
+    if ($hex -and $hex -match '^#[\da-fA-F]{6}$') {
+        try { return [Drawing.ColorTranslator]::FromHtml($hex) } catch { }
+    }
+    return $fallback
+}
+function Blend-Color([Drawing.Color]$a, [Drawing.Color]$b, [double]$weightB) {
+    $w = [Math]::Max(0.0, [Math]::Min(1.0, $weightB))
+    $r = [int][Math]::Round($a.R * (1.0 - $w) + $b.R * $w)
+    $g = [int][Math]::Round($a.G * (1.0 - $w) + $b.G * $w)
+    $bl = [int][Math]::Round($a.B * (1.0 - $w) + $b.B * $w)
+    return [Drawing.Color]::FromArgb($r, $g, $bl)
+}
+function Apply-Locale([string]$nextLang) {
+    if ($nextLang -notin @('zh','en')) { return }
+    if ($script:lang -eq $nextLang -and $heading.Text -eq $script:i18n[$nextLang].title) { return }
+    $script:lang = $nextLang
+    $s = Get-Strings
+    $script:form.Text = $s.title
+    $heading.Text = $s.title
+    $caption.Text = $s.caption
+    if ($script:statusLabel.Text -in @($script:i18n.zh.starting, $script:i18n.en.starting)) {
+        $script:statusLabel.Text = $s.starting
+    }
+    if ($script:detailLabel.Text -in @($script:i18n.zh.defaultDetail, $script:i18n.en.defaultDetail)) {
+        $script:detailLabel.Text = $s.defaultDetail
+    }
+    $script:autoBox.Text = $s.autoAnnotate
+    $script:timelineBox.Text = $s.autoTimeline
+    $script:sideLabel.Text = $s.sideLabel
+    $script:updatingLocale = $true
+    try {
+        for ($i = 0; $i -lt 3; $i++) { $script:sideBox.Items[$i] = $s.sideItems[$i] }
+    } finally { $script:updatingLocale = $false }
+    $btnOpen.Text = $s.openClient
+    $reload.Text = $s.reload
+    $btnRemove.Text = $s.removePause
+    $btnGuide.Text = $s.userGuide
+    $btnDiag.Text = $s.diagnostics
+    $btnHide.Text = $s.hideToTray
+    for ($i = 0; $i -lt $script:menu.MenuItems.Count; $i++) {
+        $script:menu.MenuItems[$i].Text = $s.menuItems[$i]
+    }
+}
+function Apply-UiTheme($theme) {
+    if (!$theme) { return }
+    if ($theme.lang) { Apply-Locale ([string]$theme.lang) }
+    $sig = "$($theme.dark)|$($theme.bg)|$($theme.surface)|$($theme.ink)|$($theme.muted)|$($theme.border)|$($theme.accent)"
+    if ($sig -eq $script:lastThemeSignature) { return }
+    $script:lastThemeSignature = $sig
+    $bgRaw = ConvertTo-Color $theme.bg ([Drawing.Color]::FromArgb(252,249,250))
+    $surfaceRaw = ConvertTo-Color $theme.surface ([Drawing.Color]::White)
+    $inkColor = ConvertTo-Color $theme.ink ([Drawing.Color]::FromArgb(41,36,42))
+    $mutedColor = ConvertTo-Color $theme.muted ([Drawing.Color]::FromArgb(112,104,109))
+    $borderColor = ConvertTo-Color $theme.border ([Drawing.Color]::FromArgb(225,216,220))
+    $accentColor = ConvertTo-Color $theme.accent ([Drawing.Color]::FromArgb(232,62,118))
+    $isDark = [bool]$theme.dark
+    $formBg = if ($isDark) { $bgRaw } else { Blend-Color $bgRaw $surfaceRaw 0.55 }
+    $btnBg = if ($isDark) { Blend-Color $surfaceRaw $inkColor 0.08 } else { $surfaceRaw }
+    $script:form.BackColor = $formBg
+    $script:form.ForeColor = $inkColor
+    $heading.ForeColor = $inkColor
+    $caption.ForeColor = $mutedColor
+    $script:statusLabel.ForeColor = $inkColor
+    $script:detailLabel.ForeColor = $mutedColor
+    $script:autoBox.ForeColor = $inkColor
+    $script:timelineBox.ForeColor = $inkColor
+    $script:sideLabel.ForeColor = $inkColor
+    $script:sideBox.BackColor = $btnBg
+    $script:sideBox.ForeColor = $inkColor
+    foreach ($btn in $script:ordinaryButtons) {
+        $btn.BackColor = $btnBg
+        $btn.ForeColor = $inkColor
+        $btn.FlatAppearance.BorderColor = $borderColor
+    }
+    $lum = $accentColor.R * 0.299 + $accentColor.G * 0.587 + $accentColor.B * 0.114
+    $reload.BackColor = $accentColor
+    $reload.ForeColor = if ($lum -gt 165) { [Drawing.Color]::FromArgb(36,33,44) } else { [Drawing.Color]::White }
+}
+try {
+    if (Test-Path -LiteralPath $script:statusPath) {
+        $initialStatus = Get-Content -LiteralPath $script:statusPath -Raw | ConvertFrom-Json
+        if ($initialStatus.uiTheme) { Apply-UiTheme $initialStatus.uiTheme }
+    }
+} catch { }
 $script:notify.Add_MouseClick({
     if ($_.Button -eq [Windows.Forms.MouseButtons]::Left) { Show-Window }
 })
@@ -272,7 +409,7 @@ foreach ($legacyName in @('Local\ChatTimelineTray-v1','Local\ChatAnnotationsTray
         foreach ($held in $legacyMutexes) { $held.ReleaseMutex(); $held.Dispose() }
         $mutex.ReleaseMutex(); $mutex.Dispose()
         $script:notify.Dispose(); $script:menu.Dispose(); $script:form.Dispose()
-        [void][Windows.Forms.MessageBox]::Show('请先从托盘退出旧 Timeline 和标注助手，再启动合并版。已保存的书签与标注会保留。','Chat Tools')
+        [void][Windows.Forms.MessageBox]::Show((Get-Strings).legacyRunning,'Chat Tools')
         exit 1
     }
     $legacyMutexes += $legacyMutex
@@ -287,43 +424,53 @@ $timer.Add_Tick({
     Maintain-Worker
     if ($script:launcher -and $script:launcher.HasExited) {
         $script:launcher.WaitForExit()
-        if ($script:launcher.ExitCode -ne 0) { $script:launchProblem = '启动未完成；若客户端已普通启动，请从托盘退出后再点“打开客户端”。' }
+        if ($script:launcher.ExitCode -ne 0) { $script:launchProblem = 'launchIncomplete' }
         $script:launcher.Dispose(); $script:launcher = $null
     }
-    $label = '等待本机调试连接'
-    $detail = '点击“打开客户端”；已普通启动时需要先从客户端托盘退出。'
     try {
         $statusItem = Get-Item -LiteralPath $script:statusPath -ErrorAction Stop
         if ($statusItem.LastWriteTimeUtc -ne $script:lastStatusWriteTime) {
             $script:cachedStatus = Get-Content -LiteralPath $script:statusPath -Raw | ConvertFrom-Json
             $script:lastStatusWriteTime = $statusItem.LastWriteTimeUtc
         }
-        $status = $script:cachedStatus
+    } catch { }
+    $status = $script:cachedStatus
+    if ($status -and $status.uiTheme) { Apply-UiTheme $status.uiTheme }
+    $s = Get-Strings
+    $label = $s.waitingLocalDebug
+    $detail = $s.waitingLocalDebugDetail
+    $waitingConnection = $true
+    try {
         if ($script:worker -and $status -and $status.workerPid -eq $script:worker.Id -and ([DateTime]::UtcNow - [DateTime]::Parse($status.at).ToUniversalTime()).TotalSeconds -lt 90) {
             $lines = @()
-            foreach ($entry in @(@('对话索引',$status.timeline),@('标注',$status.annotations))) {
+            foreach ($entry in @(@($s.featureTimeline,$status.timeline),@($s.featureAnnotations,$status.annotations))) {
                 $feature = $entry[1]
                 $state = switch ($feature.phase) {
-                    'connected' { if ($feature.installed -gt 0) { '已加载 ' + $feature.installed + ' 个窗口' } else { '等待适用对话' } }
-                    'paused' {'已暂停'}
-                    'waiting-conversation' {'等待打开对话'}
-                    'waiting-history' {'目录已加载，历史待重试'}
-                    'waiting-application' {'等待客户端启动'}
-                    'adapter-error' {'部分窗口加载失败'}
-                    default {'等待调试连接'}
+                    'connected' {
+                        if ($feature.installed -gt 0) {
+                            if ($script:lang -eq 'en') { 'Loaded in ' + $feature.installed + ' window(s)' } else { '已加载 ' + $feature.installed + ' 个窗口' }
+                        } else { $s.stateWaitingTarget }
+                    }
+                    'paused' { $s.statePaused }
+                    'waiting-conversation' { $s.stateWaitingConv }
+                    'waiting-history' { $s.stateWaitingHistory }
+                    'waiting-application' { $s.stateWaitingApp }
+                    'adapter-error' { $s.stateAdapterError }
+                    default { $s.stateWaitingDebug }
                 }
                 $lines += ($entry[0] + ' · ' + $state)
             }
             $label = $lines -join "`r`n"
-            $detail = '新窗口与页面刷新会自动加载。'
-            if ($status.timeline.failed -gt 0 -or $status.annotations.failed -gt 0) { $detail = '正在重试；排查步骤见 README-AGENT.md。' }
+            $detail = $s.connectedDetail
+            if ($status.timeline.failed -gt 0 -or $status.annotations.failed -gt 0) { $detail = $s.retryDetail }
+            $waitingConnection = ($status.timeline.phase -eq 'waiting-debug' -and $status.annotations.phase -eq 'waiting-debug')
         }
     } catch { }
-    if ($script:launchProblem -and $label -like '*等待*连接*') { $detail = $script:launchProblem }
-    if ($script:worker -and $script:worker.HasExited) { $label = '监视进程已退出'; $detail = '正在自动恢复监视；详情见诊断目录。' }
+    if ($script:launchProblem -and $waitingConnection) { $detail = if ($s[$script:launchProblem]) { $s[$script:launchProblem] } else { $script:launchProblem } }
+    if ($script:worker -and $script:worker.HasExited) { $label = $s.workerExited; $detail = $s.workerExitedDetail }
     if ($script:statusLabel.Text -cne $label) { $script:statusLabel.Text = $label }
     if ($script:detailLabel.Text -cne $detail) { $script:detailLabel.Text = $detail }
-    $text = '对话工具 · ' + $label.Replace("`r`n",' / ')
+    $text = $s.title + ' · ' + $label.Replace("`r`n",' / ')
     $shortText = $text.Substring(0,[Math]::Min(63,$text.Length))
     if ($script:notify.Text -cne $shortText) { $script:notify.Text = $shortText }
 })
@@ -333,7 +480,7 @@ $script:form.Add_Shown({
         # Reuse the current local debugging session.
         try { $endpoint = Invoke-RestMethod -Uri 'http://127.0.0.1:39223/json/version' -TimeoutSec 1 } catch { $endpoint = $null }
         if (!$endpoint.Browser) { Open-Client }
-    } catch { $script:launchProblem = '助手启动失败，请查看目录权限及 README-AGENT.md。' }
+    } catch { $script:launchProblem = 'startupFailed' }
 })
 try {
     $script:notify.Visible = $true; $timer.Start()
