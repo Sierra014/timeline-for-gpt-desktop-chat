@@ -53,11 +53,17 @@ function readChatTimelineState(atom) {
   }
   if (!api || !entries) return null;
   const states = [];
+  let unpaginated = false;
   for (const scope of atom ? scopes : []) {
-    try { const state = scope.get(atom, id); if (typeof state?.complete === 'boolean') states.push(state); }
+    try {
+      const state = scope.get(atom, id);
+      if (typeof state?.complete === 'boolean') states.push(state);
+      else if (state === null && typeof atom?.resolve === 'function' && atom.scope) unpaginated = true;
+    }
     catch { /* Ignore unrelated scopes. */ }
   }
-  const complete = states.length > 0 && states.every(state => state.complete);
+  const complete = states.length ? states.every(state => state.complete) : unpaginated;
+  const historyStateAvailable = states.length > 0 || unpaginated;
   function assistantPreview(items) {
     return items.filter(item => item.type === 'assistant-message' && typeof item.content === 'string')
       .map(item => item.content.slice(0, 5000)).join('\n\n').slice(0, 5000)
@@ -65,7 +71,7 @@ function readChatTimelineState(atom) {
       .replace(/\n{3,}/g, '\n\n').trim();
   }
   return {
-    root, contextId: source.contextId, api, complete, historyStateAvailable: states.length > 0,
+    root, contextId: source.contextId, api, complete, historyStateAvailable,
     entries: entries.map(entry => ({ key: entry.turnKey, text: entry.turn.items.filter(item => item.type === 'user-message')
       .map(item => typeof item.message === 'string' ? item.message : '').join('\n').trim(), answer: assistantPreview(entry.turn.items),
       userMessageIds: [...new Set(entry.turn.items.filter(item => item.type === 'user-message').map(item => item.messageId).filter(id => typeof id === 'string'))],
@@ -78,7 +84,7 @@ function readChatTimelineState(atom) {
 }
 
 async function installInChatGPT(installUI, readChat, options = {}, resolveNative) {
-  const build = options.compatibility || {entryScript:'app://-/assets/index-8d83f53932f0.js',historyModule:'app://-/assets/app-initial-df84a35d942d.js',historyExport:'HUn',mathModule:'app://-/assets/katex-fb2359bfd034.js'};
+  const build = options.compatibility || {entryScript:'app://-/assets/index-525daf5f2209.js',historyModule:'app://-/assets/app-initial-ad16eaadf81f.js',historyExport:'aqn',mathModule:'app://-/assets/katex-fb2359bfd034.js'};
   const resolved = await resolveNative(readChat, build);
   const {atom, renderMath, diagnostics} = resolved;
   window.__questionTimelineDiagnostics = diagnostics;
