@@ -1,51 +1,95 @@
-# Chat Tools: Timeline & Annotations for ChatGPT Desktop
+**English** | [简体中文](README.zh-CN.md)
 
-English | [简体中文](README.zh-CN.md)
+# Timeline for ChatGPT Desktop
 
-A local Windows companion for navigating and annotating long conversations in the Microsoft Store `OpenAI.Codex` client. Add a timeline, bookmarks, highlights, and notes to ChatGPT. The control panel supports English and Chinese.
+Navigate long ChatGPT conversations with a visual timeline, bookmarks, highlights, and local annotations.
 
-## For User
+Designed for the Windows desktop client, this project makes long conversations easier to revisit without repeatedly scrolling through dozens of turns.
 
-### Install and launch
+## Features
 
-1. Download the Windows x64 portable ZIP from [Releases](https://github.com/Sierra014/timeline-for-gpt-desktop-chat/releases/latest).
-2. Extract the entire archive.
-3. Double-click **Start Chat Tools.vbs** to open the client and load Timeline and Annotations.
+### Timeline
 
-The portable ZIP includes Node.js; no separate Node.js installation is required.
+- Hover over timeline markers to preview the corresponding question and answer.
+- Click a marker to jump directly to that turn.
+- Previews support bold text and formulas; answer previews show multiple lines while keeping formulas intact.
+- The timeline can be placed on the left or right side of the conversation.
+- It hides automatically when there is not enough horizontal space.
 
-### Features
+### Bookmarks
 
-- **Timeline:** Hover over the floating rail to preview questions and answers, then click to jump to a turn. Previews support bold text and formulas. Answer previews show three lines while keeping formulas intact.
-- **Bookmarks:** Click the bookmark icon on a preview card to save a turn. Bookmarked turns and the currently visible turn appear darker on the rail. Place the rail on the left or right; it hides automatically when there is not enough margin.
-- **Annotations:** Click the pen in the upper-right corner to enter annotation mode. Select text or a formula, choose a color, add a note, and save. Click the pen again to exit and restore normal text selection.
-- **Annotation navigation:** Hover over a highlight to read its note, or click to edit it. Hover over the bookmark in the upper-right corner to open annotation navigation, then click an entry to jump to it. Gray entries cannot currently be located.
-- **Conversation branches:** New branches inherit bookmarks and annotations for content retained through the branch point as independent copies. Editing or deleting the original conversation does not affect those copies. Create the branch while the tools are loaded.
-- **One control panel:** Enable or disable each feature, reload it, or remove it and pause automatic loading. New windows and page refreshes load the tools automatically. Closing the panel minimizes it to the tray; click the tray icon to reopen it. Use the tray's right-click menu to quit.
+- Bookmark important conversation turns directly from the preview card.
+- The currently visible turn and bookmarked turns are visually emphasized.
+- Use bookmarks as persistent waypoints inside long conversations.
 
-### Compatibility and updates
+### Annotations
 
-This tool targets the Microsoft Store `OpenAI.Codex` client on Windows x64. ChatGPT uses both features; Codex uses Annotations and keeps its native conversation index. The standalone ChatGPT Windows app has not been verified.
+- Enter annotation mode from the pen button.
+- Select text or formulas, choose a highlight color, add a note, and save it.
+- Hover over a highlight to inspect its note; click it to edit.
+- Open the annotation navigator from the bookmark control and jump back to saved annotations.
+- Gray entries indicate annotations that cannot currently be located in the loaded conversation.
 
-Before upgrading, quit the old helper from its tray menu, then launch the new version. If the client is already running normally and the helper keeps waiting for a connection, fully quit the client from its tray menu and launch it through the tool. The client currently needs to start with debugging enabled.
+### Branch-aware notes
 
-### Local data and limitations
+When a branch is created while the tool is loaded, bookmarks and annotations from the preserved part of the parent conversation are inherited into an independent copy.
 
-Bookmarks, highlights, notes, and left/right preferences are saved locally in the client. The tool does not transmit annotations or call AI models. Copying the tool folder moves the tool, but **does not move bookmarks or annotations**. Cross-device synchronization is not available. Runtime preferences and diagnostics are stored in `app/data/`.
+Later edits or deletion of the original conversation do not modify that copied branch data.
 
-After the tool observes a confirmed conversation deletion in the client, it removes the corresponding local records. Temporary branches with no sent messages are not automatically cleaned up when you go back or close a window. Annotations may be impossible to locate if history has not loaded, reasoning is collapsed, or the original text has changed.
+### One helper for both tools
 
-If the download does not work for you, ask Codex to help adapt it. The section below is intended for agents.
+Timeline and Annotation are managed from one helper window. Each feature can be enabled, reloaded, removed, or paused independently.
 
-## For Agent
+New app windows and page refreshes are handled automatically. Closing the helper panel sends it to the system tray; click the tray icon to reopen it.
 
-Run the tool and check capabilities before adapting it from logs. Do not reject a client solely because of its version number.
+## Installation
 
-- `app/chat-tools.ps1` manages the panel, tray, and worker. `chat-tools-monitor.cjs` manages both features. `start-debug.ps1` dynamically resolves the current Store installation.
-- `timeline-*.js/cjs` handles the index, native history, and navigation. `annotations-*.js/cjs` handles highlights, local storage, and branch/deletion listeners. Maintain only the combined version.
-- Connect CDP only to `127.0.0.1:39223` and operate only on the main `app://-/index.html` page. Wait until the application is ready before installing the tools. Do not terminate the user's client or forward the port externally.
+1. Open [Releases](https://github.com/Sierra014/timeline-for-gpt-desktop-chat/releases/latest).
+2. Download the Windows x64 portable ZIP.
+3. Extract the ZIP completely.
+4. Double-click **`Start Chat Tools.vbs`** to launch the helper and open the client with Timeline and Annotation loaded.
 
-From the extracted package root, run these read-only configuration and capability checks. They do not install the tools, scroll, or send messages:
+A separate Node.js installation is **not** required.
+
+### Upgrading
+
+Exit the old helper from the system tray before starting a newer version.
+
+If the desktop client is already running normally and the helper keeps waiting for a connection, fully exit the client from its tray menu and let the helper launch it again.
+
+The client currently still needs to be launched with debugging enabled.
+
+## Compatibility
+
+| Client | Timeline | Annotation | Status |
+| --- | --- | --- | --- |
+| ChatGPT in the Microsoft Store `OpenAI.Codex` package | Yes | Yes | Supported target |
+| Codex in the same package | Native index retained | Yes | Supported |
+| Standalone ChatGPT Windows app | Not verified | Not verified | Testing needed |
+
+The project checks capabilities instead of refusing to run solely based on the desktop client version.
+
+## Privacy and local storage
+
+Bookmarks, highlights, annotations, and timeline-side preferences are stored locally.
+
+The tool does **not** send annotation content to a model and does **not** make model calls.
+
+Its CDP connection is limited to `127.0.0.1:39223` and operates on the desktop client's main `app://-/index.html` page.
+
+Runtime preferences and diagnostics are stored under `app/data/`.
+
+Copying the project folder moves the tool itself, but **does not migrate bookmarks or annotations**. Cross-device sync is not currently implemented.
+
+When the tool observes a confirmed conversation deletion in the client, it cleans up the corresponding local records. Unsent temporary branches are not automatically removed simply because you navigate away or close the window.
+
+Annotations may temporarily fail to locate their source when history has not been loaded, reasoning content is collapsed, or the original text has changed.
+
+## Agent-assisted compatibility checks
+
+The repository includes diagnostics intended to make compatibility fixes easier when the desktop client changes.
+
+From the extracted project root, the following commands check configuration and capabilities without installing the tool, scrolling the conversation, or sending a message:
 
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\app\chat-tools.ps1 -CheckOnly
@@ -55,6 +99,26 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\app\start-debug.ps1 -C
 & .\app\runtime\node.exe .\app\inspect-chat.cjs
 ```
 
-Start with `app/data/combined-status.json`, `worker-events.jsonl`, and the startup logs. A successful connection does not prove installation or history loading succeeded; check `installed`, `failed`, and history capabilities. See [README-AGENT.md](README-AGENT.md) for navigation and storage constraints, and [BUILD.md](https://github.com/Sierra014/timeline-for-gpt-desktop-chat/blob/main/BUILD.md) for source builds.
+Useful diagnostics include:
 
-After code changes, check JavaScript syntax, Windows PowerShell 5.1 parsing, and the actual UI. Keep Chinese PowerShell files encoded as UTF-8 with BOM. Releases must include only the source allowlist, runtime, and checksum manifest; exclude `data`, logs, chats, accounts, and extracted client resources.
+- `app/data/combined-status.json`
+- `app/data/worker-events.jsonl`
+- launcher logs
+
+A successful local debugging connection does not by itself mean that feature installation or history backfilling succeeded. Check the reported `installed`, `failed`, and history capability states.
+
+For implementation details, storage behavior, and locator constraints, see [README-AGENT.md](README-AGENT.md). For building from source, see [BUILD.md](BUILD.md).
+
+## Project structure
+
+- `app/chat-tools.ps1` — helper panel, system tray, and worker management
+- `app/chat-tools-monitor.cjs` — combined Timeline and Annotation management
+- `app/timeline-*.js/cjs` — timeline rendering, native history integration, and navigation
+- `app/annotations-*.js/cjs` — highlights, local storage, branch handling, and deletion tracking
+- `app/start-debug.ps1` — resolves the installed Store package and launches it with local debugging enabled
+
+The combined implementation is the maintained entry point.
+
+## Feedback
+
+If you regularly keep long ChatGPT conversations, feedback on navigation, annotation workflows, compatibility, and edge cases is especially useful.

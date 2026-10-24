@@ -1,6 +1,6 @@
 # For Agent · Chat Tools 0.1.11
 
-先读 [README](README.md#for-agent)。目标是 Windows x64 Microsoft Store `OpenAI.Codex` 客户端，依赖本机 CDP 和内部页面能力；客户端更新可能需要适配。
+先读 [README](README.md#agent-assisted-compatibility-checks)。目标是 Windows x64 Microsoft Store `OpenAI.Codex` 客户端，依赖本机 CDP 和内部页面能力；客户端更新可能需要适配。
 
 ## 入口与排查
 
