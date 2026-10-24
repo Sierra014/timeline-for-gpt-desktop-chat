@@ -6,7 +6,7 @@ function installChatAnnotations(readSurface, options = {}) {
   if (!CSS.highlights || typeof Highlight !== 'function') return {installed: false, reason: 'highlight-api-unavailable'};
   let surface = readSurface();
   if (!surface) return {installed: false, reason: 'answer-dom-unavailable'};
-  const version = '0.1.22', storagePrefix = 'chat-annotations:v1:', colors = ['yellow', 'green', 'pink'];
+  const version = '0.1.23', storagePrefix = 'chat-annotations:v1:', colors = ['pink', 'yellow', 'green'];
   const store = window.__chatAnnotationStoreV1 || null, dirtyContexts = new Set();
   const names = colors.map(color => 'chat-annotations-' + color);
   const excluded = 'script,style,button,input,textarea,[contenteditable="true"],[aria-hidden="true"],.sr-only,math,.katex,svg';
@@ -51,7 +51,7 @@ function installChatAnnotations(readSurface, options = {}) {
   document.head.append(style); document.body.append(host);
   const $ = selector => shadow.querySelector(selector);
   const dock = $('.dock'), card = $('.card'), navigator = $('.navigator'), list = $('.list'), noteInput = $('textarea'), preview = $('.preview'), tooltip = $('.tooltip');
-  let records = [], matches = new Map(), statuses = new Map(), pending = null, editing = null, chosenColor = 'yellow';
+  let records = [], matches = new Map(), statuses = new Map(), pending = null, editing = null, chosenColor = 'pink';
   let saved = true, destroyed = false, ready = false, observer = null, timer = 0, frame = 0, refreshTimer = 0, toastTimer = 0, context = '', lastRect = null;
   const memory = new Map(), hiddenMenus = new Set();
   let hoverTimer = 0, hoverFrame = 0, hoverPoint = null, hoveredId = null, previewRect = null, pressPoint = null;
@@ -64,7 +64,7 @@ function installChatAnnotations(readSurface, options = {}) {
       annotate: '标注', nav: '标注导航', cardLabel: '本地标注', close: '关闭标注卡片',
       noteLabel: '我的注释', notePlaceholder: '添加注释', delete: '删除', save: '保存标注',
       empty: '暂无标注', sep: '，',
-      swatches: { yellow: '黄色高亮', green: '绿色高亮', pink: '粉色高亮' },
+      swatches: { pink: '主题色高亮', yellow: '黄色高亮', green: '伴随色高亮' },
       inHistory: '历史待定位', unloaded: '原文尚未加载', changed: '原文已变化或定位不唯一',
       unannotatable: '原文暂不可标注', located: '已定位',
       readFailed: '本地标注无法读取，本次会话不覆盖原数据。',
@@ -77,7 +77,7 @@ function installChatAnnotations(readSurface, options = {}) {
       annotate: 'Annotate', nav: 'Annotations', cardLabel: 'Local annotation', close: 'Close',
       noteLabel: 'My note', notePlaceholder: 'Add a note…', delete: 'Delete', save: 'Save',
       empty: 'No annotations yet', sep: ', ',
-      swatches: { yellow: 'Yellow highlight', green: 'Green highlight', pink: 'Pink highlight' },
+      swatches: { pink: 'Theme highlight', yellow: 'Yellow highlight', green: 'Companion highlight' },
       inHistory: 'In history', unloaded: 'Source not loaded', changed: 'Source changed or ambiguous',
       unannotatable: 'Cannot highlight source', located: 'Located',
       readFailed: 'Could not read local annotations; existing data will not be overwritten.',
@@ -133,6 +133,38 @@ function installChatAnnotations(readSurface, options = {}) {
   function mixRgb(a, b, weightB) {
     const w = Math.max(0, Math.min(1, weightB));
     return [0, 1, 2].map(i => Math.round(a[i] * (1 - w) + b[i] * w));
+  }
+  function rgbToHsl([r, g, b]) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, l = (max + min) / 2;
+    if (d === 0) return [0, 0, l];
+    const s = d / (1 - Math.abs(2 * l - 1));
+    let h = max === r ? ((g - b) / d + (g < b ? 6 : 0)) : max === g ? ((b - r) / d + 2) : ((r - g) / d + 4);
+    return [h * 60, s, l];
+  }
+  function hslToRgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+    const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+  function computeHighlights(accentRgb, dark) {
+    let [h, s] = rgbToHsl(accentRgb || [232, 62, 118]);
+    if (s < 0.08) { h = 340; s = 0.72; }
+    const angDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+    const h1 = angDist(h, 46) < 22 ? (h < 46 ? 22 : 74) : h;
+    const candPlus = (h1 + 58) % 360, candMinus = (h1 + 302) % 360;
+    const h3 = angDist(candPlus, 50) >= angDist(candMinus, 50) ? candPlus : candMinus;
+    const boost = hue => Math.max(0, Math.cos((hue - 250) * Math.PI / 180)) * 0.04;
+    const s1 = Math.max(0.58, Math.min(0.78, s)), s3 = Math.max(0.52, Math.min(0.72, s * 0.92));
+    return {
+      pinkSwatch: toHex(hslToRgb(h1, s1, 0.74 + boost(h1))),
+      yellowSwatch: '#efd477',
+      greenSwatch: toHex(hslToRgb(h3, s3, 0.74 + boost(h3))),
+      pinkHl: toHex(hslToRgb(h1, Math.max(0.65, Math.min(0.84, s)), (dark ? 0.60 : 0.64) + boost(h1))) + (dark ? '59' : '55'),
+      yellowHl: '#efc74366',
+      greenHl: toHex(hslToRgb(h3, Math.max(0.58, Math.min(0.76, s * 0.92)), (dark ? 0.58 : 0.62) + boost(h3))) + (dark ? '59' : '55'),
+    };
   }
   window.__chatAnnotationsV1 = {summary, destroy};
   function restoreMenus() {
@@ -404,6 +436,14 @@ function installChatAnnotations(readSurface, options = {}) {
         {paper:'#fffdfd',ink:'#29262b',line:'#dedade',muted:'#87818a',soft:'#f3f0f3','annotation-accent':'#e83e76','dock-hover':'#e9e5e8','dock-active':'#eadce2','scroll-thumb':'#dedbde','scroll-hover':'#c6c0c5'};
     }
     for (const [key, value] of Object.entries(variables)) host.style.setProperty('--' + key, value);
+    const hl = computeHighlights(accentRgb || parseRgb(variables['annotation-accent']), dark);
+    const nextCss = `::highlight(chat-annotations-pink){background-color:${hl.pinkHl}}::highlight(chat-annotations-yellow){background-color:${hl.yellowHl}}::highlight(chat-annotations-green){background-color:${hl.greenHl}}[data-chat-annotations-menu-hidden="v1"]{visibility:hidden!important}`;
+    if (style.textContent !== nextCss) style.textContent = nextCss;
+    const swatchColors = { pink: hl.pinkSwatch, yellow: hl.yellowSwatch, green: hl.greenSwatch };
+    for (const button of shadow.querySelectorAll('.swatch')) {
+      const c = swatchColors[button.dataset.color];
+      if (c && button.style.backgroundColor !== c) button.style.backgroundColor = c;
+    }
     uiTheme = { lang, dark: !!dark, bg: underHex, surface: variables.paper, ink: variables.ink, muted: variables.muted, border: variables.line, accent: variables['annotation-accent'] };
   }
   function refresh() {
@@ -627,7 +667,7 @@ function installChatAnnotations(readSurface, options = {}) {
   }
   function showEditor(record, rect) {
     hideHoverPanels(); editing = record; lastRect = rect; card.hidden = false;
-    noteInput.value = record.note || ''; choose(record.color || 'yellow');
+    noteInput.value = record.note || ''; choose(record.color || 'pink');
     $('.delete').hidden = !records.some(item => item.id === record.id);
     position();
   }
@@ -693,7 +733,7 @@ function installChatAnnotations(readSurface, options = {}) {
   function newAnnotation(rect) {
     if (!pending) return;
     const {range, ...anchor} = pending;
-    showEditor({...anchor, id: crypto.randomUUID(), color: 'yellow', note: '', createdAt: new Date().toISOString()}, rect);
+    showEditor({...anchor, id: crypto.randomUUID(), color: 'pink', note: '', createdAt: new Date().toISOString()}, rect);
   }
   $('.mode-toggle').onclick = () => {
     setAnnotationMode(!annotationMode);

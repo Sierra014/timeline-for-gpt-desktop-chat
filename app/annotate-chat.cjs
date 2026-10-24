@@ -4,7 +4,7 @@ const {readAnnotationSurface} = require('./annotations-adapter.js');
 const {installChatAnnotations} = require('./annotations-runtime.js');
 const {installAnnotationStore} = require('./annotations-store.js');
 const {installAnnotationLifecycle} = require('./annotations-lifecycle.js');
-const version = '0.1.22';
+const version = '0.1.23';
 
 function removeAnnotations(keepLifecycle = false) {
   const selector = '#chat-annotations-v1,style[data-chat-annotations-style="v1"]';
