@@ -6,7 +6,7 @@ function installChatAnnotations(readSurface, options = {}) {
   if (!CSS.highlights || typeof Highlight !== 'function') return {installed: false, reason: 'highlight-api-unavailable'};
   let surface = readSurface();
   if (!surface) return {installed: false, reason: 'answer-dom-unavailable'};
-  const version = '0.1.21', storagePrefix = 'chat-annotations:v1:', colors = ['yellow', 'green', 'pink'];
+  const version = '0.1.22', storagePrefix = 'chat-annotations:v1:', colors = ['yellow', 'green', 'pink'];
   const store = window.__chatAnnotationStoreV1 || null, dirtyContexts = new Set();
   const names = colors.map(color => 'chat-annotations-' + color);
   const excluded = 'script,style,button,input,textarea,[contenteditable="true"],[aria-hidden="true"],.sr-only,math,.katex,svg';
@@ -87,7 +87,7 @@ function installChatAnnotations(readSurface, options = {}) {
       historyFailed: 'History jump incomplete, please retry.'
     }
   };
-  let lang = 'zh', uiTheme = null;
+  let lang = '', uiTheme = null;
   function detectLang() {
     const raw = (typeof document !== 'undefined' && document.documentElement?.lang) || (typeof navigator !== 'undefined' && navigator.language) || 'zh';
     return /^zh\b/i.test(raw) ? 'zh' : 'en';

@@ -87,12 +87,13 @@ function installQuestionTimeline(readState, options = {}) {
       turnLabel: (i, text) => `Prompt ${i + 1}: ${text.slice(0, 180) || 'Image or file input'}`
     }
   };
-  let lang = 'zh', uiTheme = null;
+  let lang = '', uiTheme = null;
   function detectLang() {
     const raw = (typeof document !== 'undefined' && document.documentElement?.lang) || (typeof navigator !== 'undefined' && navigator.language) || 'zh';
     return /^zh\b/i.test(raw) ? 'zh' : 'en';
   }
   function t() { return i18n[lang] || i18n.zh; }
+  function errorText() { return error ? (t()[error] || error) : ''; }
   function parseRgb(value) {
     const s = String(value || '').trim();
     if (/^#[\da-f]{3}$/i.test(s)) return [1, 2, 3].map(i => parseInt(s[i] + s[i], 16));
@@ -173,7 +174,7 @@ function installQuestionTimeline(readState, options = {}) {
     rail.setAttribute('aria-label', s.railLabel);
     bubble.setAttribute('aria-label', s.previewLabel);
     retry.setAttribute('aria-label', s.reload);
-    retry.setAttribute('data-tooltip', loading ? s.loadingHistory : error || s.reload);
+    retry.setAttribute('data-tooltip', loading ? s.loadingHistory : errorText() || s.reload);
     applySide();
     updateMarks();
     if (state?.entries) buttons.forEach((button, index) => {
@@ -525,8 +526,8 @@ function installQuestionTimeline(readState, options = {}) {
       if (!destroyed && context === expectedContext && root === expectedRoot) loadSucceeded = true;
     } catch (cause) {
       if (!destroyed && context === expectedContext && root === expectedRoot) options.onDiagnostic?.('history-load', controller.signal.aborted ? 'history-load-timeout' : 'history-load-failed', cause);
-      if (!destroyed && context === expectedContext && root === expectedRoot && !controller.signal.aborted) error = t().loadFailed;
-      else if (!destroyed && context === expectedContext && root === expectedRoot) error = t().loadTimeout;
+      if (!destroyed && context === expectedContext && root === expectedRoot && !controller.signal.aborted) error = 'loadFailed';
+      else if (!destroyed && context === expectedContext && root === expectedRoot) error = 'loadTimeout';
     } finally {
       clearTimeout(timer);
       if (loadAbort === controller) { loadAbort = null; loading = false; if (!destroyed) refresh(); }
@@ -566,7 +567,7 @@ function installQuestionTimeline(readState, options = {}) {
     render(); updateMarks(); layout();
     updateFade();
     retry.disabled = loading;
-    retry.setAttribute('data-tooltip', loading ? t().loadingHistory : error || t().reload);
+    retry.setAttribute('data-tooltip', loading ? t().loadingHistory : errorText() || t().reload);
     if (hoverIndex >= 0) showPreview(hoverIndex, '', true);
     if (!dock.hidden && !loadAttempted && !state.complete) void loadHistory();
   }

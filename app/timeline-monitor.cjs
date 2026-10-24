@@ -51,7 +51,10 @@ function createMonitor({list, snapshot, inspect, install, remove, log, now = Dat
         }
         if (!requested && now() < previous.retryAt) { if (previous.failed) failed++; continue; }
         const report = await inspect(page);
-        if (!report.loadedState?.userMessages || !report.internalMethods?.scrollToKey) continue;
+        if (!report.loadedState?.userMessages || !report.internalMethods?.scrollToKey) {
+          if (current.summary?.installed && !compatible) { try { await remove(page); } catch {} }
+          continue;
+        }
         previous.generation = generation;
         const options = ['left', 'right'].includes(preferences.side) ? {side: preferences.side} : {};
         const result = await install(page, options);
