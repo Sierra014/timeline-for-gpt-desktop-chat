@@ -4,7 +4,7 @@ const path = require('node:path');
 const {pass} = require('./annotate-chat.cjs');
 const defaults = {enabled:true,generation:0,removeGeneration:0,stopSession:''};
 function createMonitor({scan = pass, dataFolder = path.join(__dirname,'data'), session = ''} = {}) {
-  let preferences = {...defaults}, generation = 0, removed = 0;
+  let preferences = {...defaults}, generation = 0, removed = 0, lastSignature = '', lastWriteAt = 0;
   function readPreferences() {
     try {
       const value = JSON.parse(fs.readFileSync(path.join(dataFolder,'preferences.json'),'utf8').replace(/^\uFEFF/,''));
@@ -33,11 +33,16 @@ function createMonitor({scan = pass, dataFolder = path.join(__dirname,'data'), s
       const phase = !prefs.enabled ? 'paused' : failed || unsupported ? 'adapter-error' : installed ? 'connected' : windows.some(window => window.waitingForApplication) ? 'waiting-application' : 'waiting-conversation';
       report = {phase,version:report.version,windows:windows.length,installed,failed,unsupported};
     } catch { report = {phase:prefs.enabled ? 'waiting-debug' : 'paused',windows:0,installed:0,failed:0,endpointReady:false}; }
-    const status = {at:new Date().toISOString(),workerPid:process.pid,enabled:prefs.enabled,...report};
-    fs.mkdirSync(dataFolder,{recursive:true});
-    const file = path.join(dataFolder,'status.json'), temporary = file + '.tmp';
-    fs.writeFileSync(temporary,JSON.stringify(status),'utf8');
-    fs.renameSync(temporary,file);
+    const now = Date.now(), signature = JSON.stringify({workerPid:process.pid,enabled:prefs.enabled,...report});
+    const status = {at:new Date(now).toISOString(),workerPid:process.pid,enabled:prefs.enabled,...report};
+    const file = path.join(dataFolder,'status.json');
+    if (signature !== lastSignature || now - lastWriteAt >= 20000 || !fs.existsSync(file)) {
+      fs.mkdirSync(dataFolder,{recursive:true});
+      const temporary = file + '.tmp';
+      fs.writeFileSync(temporary,JSON.stringify(status),'utf8');
+      fs.renameSync(temporary,file);
+      lastSignature = signature; lastWriteAt = now;
+    }
     return status;
   }
   return {tick};

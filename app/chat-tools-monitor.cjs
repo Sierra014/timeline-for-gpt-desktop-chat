@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const version = '0.1.11';
+const version = '0.1.15';
 function component(name) {
   return require(path.join(__dirname, name));
 }
@@ -25,7 +25,7 @@ const defaults = {enabled:true,timelineEnabled:true,generation:0,timelineGenerat
 function createMonitor({dataFolder=path.join(__dirname,'data'),session='',timeline,annotations}={}) {
   timeline ||= nativeTimeline();
   annotations ||= component('annotations-monitor.cjs').createMonitor({dataFolder,session});
-  let preferences = {...defaults};
+  let preferences = {...defaults}, lastSignature = '', lastWriteAt = 0;
   function readPreferences() {
     try {
       const value=JSON.parse(fs.readFileSync(path.join(dataFolder,'preferences.json'),'utf8').replace(/^\uFEFF/,''));
@@ -52,11 +52,15 @@ function createMonitor({dataFolder=path.join(__dirname,'data'),session='',timeli
       return {phase:result.phase,windows:result.windows,installed:result.installed,
         failed:result.failed,unsupported:result.unsupported || 0};
     };
-    const status={at:new Date().toISOString(),workerPid:process.pid,version,
-      timeline:featureStatus(0),annotations:featureStatus(1)};
-    fs.mkdirSync(dataFolder,{recursive:true});
+    const now=Date.now(),tl=featureStatus(0),an=featureStatus(1);
+    const signature=JSON.stringify({workerPid:process.pid,version,timeline:tl,annotations:an});
+    const status={at:new Date(now).toISOString(),workerPid:process.pid,version,timeline:tl,annotations:an};
     const file=path.join(dataFolder,'combined-status.json');
-    fs.writeFileSync(file+'.tmp',JSON.stringify(status),'utf8');fs.renameSync(file+'.tmp',file);
+    if (signature!==lastSignature || now-lastWriteAt>=20000 || !fs.existsSync(file)) {
+      fs.mkdirSync(dataFolder,{recursive:true});
+      fs.writeFileSync(file+'.tmp',JSON.stringify(status),'utf8');fs.renameSync(file+'.tmp',file);
+      lastSignature=signature;lastWriteAt=now;
+    }
     return status;
   }
   return {tick};

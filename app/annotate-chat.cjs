@@ -4,7 +4,7 @@ const {readAnnotationSurface} = require('./annotations-adapter.js');
 const {installChatAnnotations} = require('./annotations-runtime.js');
 const {installAnnotationStore} = require('./annotations-store.js');
 const {installAnnotationLifecycle} = require('./annotations-lifecycle.js');
-const version = '0.1.17';
+const version = '0.1.21';
 
 function removeAnnotations(keepLifecycle = false) {
   const selector = '#chat-annotations-v1,style[data-chat-annotations-style="v1"]';
@@ -51,7 +51,13 @@ async function pass(mode) {
           windows.push({window:index + 1, ...report, removed:!!report.annotationHosts, waitingForConversation:!report.supported, waitingForApplication:true}); continue;
         }
         // Recheck inside the installer: navigation can replace the page between evaluations.
-        report.lifecycle = await evaluate(target,'('+installAnnotationLifecycle.toString()+')('+installAnnotationStore.toString()+',{ready:'+applicationReady.toString()+'})');
+        const refreshOnly = mode === 'watch' && report.lifecycle?.installed && report.lifecycle.version === 3;
+        report.lifecycle = await evaluate(target, refreshOnly
+          ? '(() => { if (!(' + applicationReady.toString() + ')()) return {installed:false,waitingForApplication:true}; const lc = window.__chatAnnotationLifecycleV1; if (lc?.version === 3) { lc.refresh(); return lc.summary(); } return {installed:false}; })()'
+          : '('+installAnnotationLifecycle.toString()+')('+installAnnotationStore.toString()+',{ready:'+applicationReady.toString()+'})');
+        if (!report.lifecycle.installed && !report.lifecycle.waitingForApplication) {
+          report.lifecycle = await evaluate(target,'('+installAnnotationLifecycle.toString()+')('+installAnnotationStore.toString()+',{ready:'+applicationReady.toString()+'})');
+        }
         if (report.lifecycle.waitingForApplication) {
           windows.push({window:index + 1, ...report, waitingForApplication:true}); continue;
         }

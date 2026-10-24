@@ -6,7 +6,7 @@ function installChatAnnotations(readSurface, options = {}) {
   if (!CSS.highlights || typeof Highlight !== 'function') return {installed: false, reason: 'highlight-api-unavailable'};
   let surface = readSurface();
   if (!surface) return {installed: false, reason: 'answer-dom-unavailable'};
-  const version = '0.1.17', storagePrefix = 'chat-annotations:v1:', colors = ['yellow', 'green', 'pink'];
+  const version = '0.1.21', storagePrefix = 'chat-annotations:v1:', colors = ['yellow', 'green', 'pink'];
   const store = window.__chatAnnotationStoreV1 || null, dirtyContexts = new Set();
   const names = colors.map(color => 'chat-annotations-' + color);
   const excluded = 'script,style,button,input,textarea,[contenteditable="true"],[aria-hidden="true"],.sr-only,math,.katex,svg';
@@ -15,7 +15,7 @@ function installChatAnnotations(readSurface, options = {}) {
   host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:50';
   const shadow = host.attachShadow({mode: 'open'});
   shadow.innerHTML = `<style>
-    :host{font:13px/1.5 system-ui,"Segoe UI",sans-serif;color:var(--ink,#29262b);--paper:#fffdfd;--line:#dedade;--muted:#87818a;--soft:#f3f0f3;--annotation-accent:#e83e76;--dock-hover:#e9e5e8;--dock-active:#eadce2;--scroll-thumb:#dedbde;--scroll-hover:#c6c0c5}
+    :host{font-family:inherit;font-size:13px;line-height:1.5;color:var(--ink,#29262b);--paper:#fffdfd;--line:#dedade;--muted:#87818a;--soft:#f3f0f3;--annotation-accent:#e83e76;--dock-hover:#e9e5e8;--dock-active:#eadce2;--scroll-thumb:#dedbde;--scroll-hover:#c6c0c5}
     *{box-sizing:border-box}[hidden]{display:none!important}button,textarea{font:inherit;color:inherit}
     button{cursor:pointer;border:0;background:transparent}button:focus-visible{outline:2px solid var(--annotation-accent);outline-offset:2px}
     .dock,.card,.navigator,.preview{position:fixed;pointer-events:auto}
@@ -35,7 +35,7 @@ function installChatAnnotations(readSurface, options = {}) {
     textarea{display:block;width:100%;resize:vertical;height:calc(3.2em + 18px);min-height:calc(3.2em + 18px);max-height:180px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);line-height:1.6}textarea:focus{border-color:var(--annotation-accent);outline:none;box-shadow:0 0 0 .5px var(--annotation-accent)}
     textarea::placeholder{color:var(--muted)}.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:11px}.actions button{padding:5px 10px;border-radius:7px}.save{background:var(--ink);color:var(--paper)}.delete{margin-right:auto;color:#b44460}
     .navigator{width:272px;max-width:calc(100vw - 20px);max-height:55vh;overflow:hidden;border-radius:15px;padding:6px 2px 6px 6px}.navigator-scroll{max-height:calc(55vh - 14px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;border-radius:9px;scrollbar-gutter:stable;padding-right:8px}.list{display:flex;flex-direction:column;gap:0}.item{position:relative;text-align:left;padding:6px 11px 6px 24px;border:0;border-radius:10px;width:100%;flex:none;min-width:0}.item::before{content:"-";position:absolute;left:10px;top:6px;color:var(--muted);font-size:13px}.item:not(:disabled):hover{background:var(--soft)}.item:disabled{color:var(--muted);cursor:default}
-    .item-quote,.item-note{display:flex;align-items:baseline;min-width:0;white-space:nowrap;overflow:hidden;font-size:13px}.quote-content{display:block;flex:1;min-width:0;overflow:hidden}.quote-ellipsis{flex:none}.item-quote math{display:inline math;font-size:1em;font-family:"Cambria Math",math;vertical-align:baseline}.item-note{color:var(--muted);font-size:12px;margin-top:1px}
+    .item-quote,.item-note{display:flex;align-items:baseline;min-width:0;white-space:nowrap;overflow:hidden;font-size:13px}.quote-content{display:block;flex:1;min-width:0;overflow:hidden}.quote-ellipsis{flex:none}.item-quote,.item-note,.preview{font-family:var(--annotation-text-font,inherit)}.item-quote mtext{font-family:var(--annotation-text-font,inherit)}.item-quote math{display:inline math;font-size:1em;font-family:"Cambria Math",math;vertical-align:baseline}.item-note{color:var(--muted);font-size:12px;margin-top:1px}
     .empty{font-size:12px;color:var(--muted);padding:10px 11px}
     .preview{width:max-content;max-width:min(300px,calc(100vw - 20px));max-height:30vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.65}
     .tooltip,.toast{position:fixed;padding:6px 10px;border-radius:8px;background:#28252a;color:white;pointer-events:none;font-size:12px;box-shadow:0 4px 12px #0002}.tooltip{white-space:nowrap}.toast{left:50%;bottom:30px;transform:translateX(-50%);max-width:calc(100vw - 30px)}
@@ -90,6 +90,19 @@ function installChatAnnotations(readSurface, options = {}) {
     if (!result || count > 500) return null;
     result.setAttribute('display', 'inline'); return result;
   }
+  function unboxPreviewMath(math) {
+    let unboxed = false;
+    for (const box of [...math.querySelectorAll('menclose')]) {
+      const notations = (box.getAttribute('notation') || '').split(/\s+/).filter(Boolean);
+      if (!notations.includes('box') && !notations.includes('roundedbox')) continue;
+      const remaining = notations.filter(value => value !== 'box' && value !== 'roundedbox');
+      if (remaining.length) box.setAttribute('notation', remaining.join(' '));
+      else box.replaceWith(...box.childNodes);
+      unboxed = true;
+    }
+    if (unboxed) math.dataset.annotationUnboxed = 'true';
+    return math;
+  }
   function appendQuote(element, record) {
     const content = document.createElement('span'); content.className = 'quote-content';
     const more = document.createElement('span'); more.className = 'quote-ellipsis'; more.hidden = true; more.setAttribute('aria-hidden','true');
@@ -101,6 +114,7 @@ function installChatAnnotations(readSurface, options = {}) {
       if (typeof part.markup === 'string' && part.markup.length <= 12000 && !part.markup.includes('<!')) {
         const parsed = new DOMParser().parseFromString(part.markup, 'application/xml');
         math = safeMath(parsed.documentElement);
+        if (math) unboxPreviewMath(math);
       }
       content.append(math || document.createTextNode(record.exact.slice(part.start, part.end)));
       cursor = part.end;
@@ -121,14 +135,22 @@ function installChatAnnotations(readSurface, options = {}) {
       const range = document.createRange();
       const renderedWidth = () => {range.selectNodeContents(content);return range.getBoundingClientRect().width;};
       if (renderedWidth() <= width - .5) continue;
-      // Keep real formula structures atomic. A text-only MathML box is an excerpt:
-      // shorten its mtext while retaining the whole box around the remaining glyphs.
+      // Keep ordinary compound formulas atomic; text-only MathML remains an excerpt.
       const groups = [], textGroup = (node,math = null) => ({node,math,text:node.data,
         ends:[...segmenter.segment(node.data)].map(part=>part.index+part.segment.length)});
+      // Unboxed excerpts may contain several text runs and operators. Fit these
+      // runs in order; keep fractions, scripts and other compound notation atomic.
+      const previewRows = new Set(['math','mrow','mstyle','semantics','mtext']);
+      function unboxedGroups(node) {
+        if (node.nodeType === Node.TEXT_NODE) groups.push(textGroup(node));
+        else if (previewRows.has(node.localName)) for (const child of node.childNodes) unboxedGroups(child);
+        else groups.push({node,atomic:true,ends:[1]});
+      }
       const textTags = new Set(['mrow','mstyle','semantics','menclose','mtext']);
       for (const child of content.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) groups.push(textGroup(child));
         else if (child.localName === 'math') {
+          if (child.dataset.annotationUnboxed === 'true') { unboxedGroups(child); continue; }
           const texts = child.querySelectorAll('mtext'), text = texts[0];
           if (texts.length === 1 && text.textContent && [...child.querySelectorAll('*')].every(node=>textTags.has(node.localName)) &&
               [...text.childNodes].every(node=>node.nodeType===Node.TEXT_NODE)) {
@@ -254,7 +276,11 @@ function installChatAnnotations(readSurface, options = {}) {
     toastTimer = setTimeout(() => { $('.toast').hidden = true; }, 3200);
   }
   function theme() {
-    const color = getComputedStyle(surface.root).color.match(/\d+(?:\.\d+)?/g) || [];
+    const rootStyle = getComputedStyle(surface.root);
+    host.style.fontFamily = rootStyle.fontFamily || 'inherit';
+    host.style.setProperty('--annotation-text-font', rootStyle.fontFamily || 'inherit');
+    host.style.fontWeight = rootStyle.fontWeight || 'inherit';
+    const color = rootStyle.color.match(/\d+(?:\.\d+)?/g) || [];
     const dark = Number(color[0]) + Number(color[1]) + Number(color[2]) > 480;
     const variables = dark ? {paper:'#282629',ink:'#f1edf2',line:'#514c54',muted:'#aaa2af',soft:'#363138','dock-hover':'#444045','dock-active':'#58434d','scroll-thumb':'#514c54','scroll-hover':'#716a72'} :
       {paper:'#fffdfd',ink:'#29262b',line:'#dedade',muted:'#87818a',soft:'#f3f0f3','dock-hover':'#e9e5e8','dock-active':'#eadce2','scroll-thumb':'#dedbde','scroll-hover':'#c6c0c5'};
@@ -274,20 +300,25 @@ function installChatAnnotations(readSurface, options = {}) {
       load(surface.contextId);
     }
     matches = new Map(); statuses = new Map(); historyReady = new Set();
-    const snapshots = new Map(surface.messages.map(message => [message.messageId, {message, legacy:snapshot(message), math:null}]));
     const ranges = new Map(colors.map(color => [color, []]));
-    for (const record of records) {
-      const current = snapshots.get(record.messageId);
-      if (!current) {
-        if (surface.navigation?.has(record.messageId)) historyReady.add(record.id);
-        statuses.set(record.id, historyReady.has(record.id) ? '历史待定位' : '原文尚未加载'); continue;
+    if (records.length) {
+      const messageMap = new Map(surface.messages.map(message => [message.messageId, message]));
+      const snapshots = new Map();
+      for (const record of records) {
+        const message = messageMap.get(record.messageId);
+        if (!message) {
+          if (surface.navigation?.has(record.messageId)) historyReady.add(record.id);
+          statuses.set(record.id, historyReady.has(record.id) ? '历史待定位' : '原文尚未加载'); continue;
+        }
+        let current = snapshots.get(record.messageId);
+        if (!current) { current = {message, legacy:null, math:null}; snapshots.set(record.messageId, current); }
+        const data = record.mathAnchors === true ? (current.math ||= snapshot(current.message, true)) : (current.legacy ||= snapshot(current.message));
+        const start = locate(record, data);
+        if (start < 0) { statuses.set(record.id, '原文已变化或定位不唯一'); continue; }
+        const range = makeRange(data, start, start + record.exact.length);
+        if (!range) { statuses.set(record.id, '原文暂不可标注'); continue; }
+        matches.set(record.id, range); ranges.get(record.color).push(range); statuses.set(record.id, '已定位');
       }
-      const data = record.mathAnchors === true ? (current.math ||= snapshot(current.message, true)) : current.legacy;
-      const start = locate(record, data);
-      if (start < 0) { statuses.set(record.id, '原文已变化或定位不唯一'); continue; }
-      const range = makeRange(data, start, start + record.exact.length);
-      if (!range) { statuses.set(record.id, '原文暂不可标注'); continue; }
-      matches.set(record.id, range); ranges.get(record.color).push(range); statuses.set(record.id, '已定位');
     }
     for (const color of colors) CSS.highlights.set('chat-annotations-' + color, new Highlight(...ranges.get(color)));
     if(store?.isDeleted(context)) {setAnnotationMode(false);dock.hidden=true;saved=false;return;}
@@ -599,7 +630,9 @@ function installChatAnnotations(readSurface, options = {}) {
   window.addEventListener('resize', scheduleRefresh);
   window.addEventListener('chat-annotations-store-change',storeChanged);
   window.addEventListener('storage',storeChanged);
-  timer = setInterval(refresh, 1500);
+  function visibilityChanged() { if (!document.hidden) scheduleRefresh(); }
+  document.addEventListener('visibilitychange', visibilityChanged);
+  timer = setInterval(() => { if (!document.hidden) refresh(); }, 1500);
   function summary() { return {installed:ready && !destroyed, version, messages:surface?.messages.length || 0, annotations:records.length,
     located:matches.size, historyNavigable:historyReady.size, unresolved:records.length - matches.size, storageAvailable:saved,
     mode:surface?.contextId.split(':')[0] || null, annotationMode}; }
@@ -611,6 +644,7 @@ function installChatAnnotations(readSurface, options = {}) {
     document.removeEventListener('keydown', keydown);
     document.removeEventListener('pointerup', selectionFinished); document.removeEventListener('keyup', selectionFinished); restoreMenus();
     document.removeEventListener('scroll', scrolled, true); window.removeEventListener('resize', scheduleRefresh);
+    document.removeEventListener('visibilitychange', visibilityChanged);
     window.removeEventListener('chat-annotations-store-change',storeChanged);window.removeEventListener('storage',storeChanged);
     for (const name of names) CSS.highlights.delete(name);
     style.remove(); host.remove();
@@ -619,7 +653,7 @@ function installChatAnnotations(readSurface, options = {}) {
       delete window.__chatAnnotationsV1;
     }
   }
-  refresh(); selected(); ready = true;
+  ready = true; refresh(); selected();
   return summary();
 }
 

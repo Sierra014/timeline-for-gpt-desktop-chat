@@ -9,7 +9,7 @@ async function installAnnotationLifecycle(installStore, options = {}) {
   const store = installStore(), restores = [], pending = new Map();
   let destroyed = false, bookmarkCopies = 0, copies = 0, deletions = 0, failures = 0, clients = 0, buses = 0, branchers = 0, identities = 0;
   let identityAtom = options.identityAtom;
-  const observedScopes = new WeakSet(), observedBranchers = new WeakSet(), modules = [], branchAtoms = [], draftWatchers = new Map();
+  const observedScopes = new WeakSet(), observedBranchers = new WeakSet(), observedClients = new WeakSet(), modules = [], branchAtoms = [], draftWatchers = new Map();
   const id = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/\s/.test(value);
   function guarded(action) { try { return action(); } catch { failures++; return null; } }
   function chatPath(conversation, boundary, targetId = conversation?.conversation_id ?? conversation?.id) {
@@ -98,7 +98,7 @@ async function installAnnotationLifecycle(installStore, options = {}) {
     restores.push(()=>{if(prototype.branch===wrapped){if(own)Object.defineProperty(prototype,'branch',own);else delete prototype.branch;}});
   }
   function observeClient(client) {
-    if (!client || typeof client.makeRequest !== 'function' || typeof client.safeGet !== 'function' || typeof client.safeDelete !== 'function') return;
+    if (!client || typeof client.makeRequest !== 'function' || typeof client.safeGet !== 'function' || typeof client.safeDelete !== 'function' || observedClients.has(client)) return;
     const own = Object.getOwnPropertyDescriptor(client,'makeRequest'), original = client.makeRequest;
     function wrapped(method, path, params) {
       let request = null;
@@ -127,7 +127,7 @@ async function installAnnotationLifecycle(installStore, options = {}) {
         throw error;
       });
     }
-    Object.defineProperty(client,'makeRequest',{value:wrapped,writable:true,configurable:true}); clients++;
+    Object.defineProperty(client,'makeRequest',{value:wrapped,writable:true,configurable:true}); observedClients.add(client); clients++;
     restores.push(()=>{if(client.makeRequest===wrapped){if(own)Object.defineProperty(client,'makeRequest',own);else delete client.makeRequest;}});
   }
   function outgoing(event) {

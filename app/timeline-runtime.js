@@ -11,7 +11,7 @@ function installQuestionTimeline(readState, options = {}) {
   host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:10;';
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `<style>
-    :host { font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--qt-ink,#29242a); }
+    :host { font-family:inherit; color:var(--qt-ink,#29242a); }
     * { box-sizing:border-box; }
     .dock { position:absolute; width:44px; pointer-events:auto; }
     .tools { display:flex;flex-direction:column;align-items:flex-end;padding-right:2px;height:36px;opacity:0;transition:opacity .15s; }
@@ -19,7 +19,7 @@ function installQuestionTimeline(readState, options = {}) {
     .dock:hover .tools,.dock:focus-within .tools { opacity:1; }
     .tool { position:relative;border:0;background:transparent;color:var(--qt-muted,#8c898e);width:18px;height:18px;padding:0;cursor:pointer;font-family:inherit;font-size:12px;line-height:18px; }
     .tool:hover { color:var(--qt-ink,#29242a); }
-    .tool::after { content:attr(data-tooltip);display:none;position:absolute;right:calc(100% + 8px);top:50%;transform:translateY(-50%);padding:6px 10px;border-radius:8px;background:#292729;color:#fff;box-shadow:0 4px 14px #00000020;font:500 12px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;white-space:nowrap;pointer-events:none;z-index:1; }
+    .tool::after { content:attr(data-tooltip);display:none;position:absolute;right:calc(100% + 8px);top:50%;transform:translateY(-50%);padding:6px 10px;border-radius:8px;background:#292729;color:#fff;box-shadow:0 4px 14px #00000020;font-family:inherit;font-size:12px;line-height:1.5;font-weight:500;white-space:nowrap;pointer-events:none;z-index:1; }
     .tool:hover::after,.tool:focus-visible::after { display:block; }
     .dock[data-side="left"] .tool::after { right:auto;left:calc(100% + 8px); }
     .rail { position:relative;width:44px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:none; }
@@ -36,16 +36,16 @@ function installQuestionTimeline(readState, options = {}) {
     .dock[data-side="left"] .tick[data-bookmarked="true"] .line::after { left:auto;right:-4px; }
     .tick[data-preview="true"] .line { background:var(--qt-ink,#29242a); }
     .tick:focus-visible { outline:1px solid var(--qt-muted,#8c898e);outline-offset:-1px;border-radius:2px; }
-    .bubble { position:absolute;pointer-events:auto;width:320px;padding:11px 12px;background:var(--qt-bg,#fff);border:1px solid var(--qt-border,#dedade);border-radius:14px;box-shadow:0 10px 28px #00000012; }
+    .bubble { position:absolute;pointer-events:auto;width:320px;padding:8px;background:var(--qt-bg,#fff);border:1px solid var(--qt-border,#dedade);border-radius:14px;box-shadow:0 10px 28px #00000012; }
     .heading { display:flex;align-items:center;gap:8px; }
-    .question { flex:1;min-width:0;font-size:12.5px;line-height:1.6;font-weight:700;white-space:nowrap;text-overflow:ellipsis;overflow:hidden; }
+    .question { flex:1;min-width:0;font-size:13px;line-height:1.6;font-weight:var(--text-card-title--font-weight,600);color:color-mix(in srgb,var(--qt-ink,#29242a) 85%,var(--qt-muted,#8c898e));white-space:nowrap;text-overflow:ellipsis;overflow:hidden; }
     .bookmark { flex:none;width:20px;height:22px;padding:3px;border:0;background:transparent;color:var(--qt-muted,#8c898e);cursor:pointer; }
     .bookmark:hover,.bookmark[aria-pressed="true"] { color:var(--qt-ink,#29242a); }
     .bookmark svg { width:14px;height:16px;display:block;stroke-linecap:round;stroke-linejoin:round; }
     .bookmark[aria-pressed="true"] svg { fill:currentColor; }
-    .answer { margin-top:5px;font-size:12px;line-height:1.6;color:var(--qt-muted,#8c898e);white-space:pre-line;overflow-wrap:anywhere;display:block;overflow:hidden; }
+    .answer { margin-top:5px;font-size:13px;line-height:1.6;color:var(--qt-muted,#8c898e);white-space:pre-line;overflow-wrap:anywhere;display:block;overflow:hidden; }
     .answer strong { font-weight:700; }
-    .answer code { font:11px/1.6 ui-monospace,Consolas,monospace;background:var(--qt-code,#efedef);border-radius:3px;padding:0 3px;white-space:pre-wrap; }
+    .answer code { font:11px/1.6 var(--font-mono,ui-monospace,Consolas,monospace);background:var(--qt-code,#efedef);border-radius:3px;padding:0 3px;white-space:pre-wrap; }
     .answer .code-block { display:block; }
     .answer math { font-size:1em; }
     .answer .math-display { display:block;white-space:normal; }
@@ -69,7 +69,7 @@ function installQuestionTimeline(readState, options = {}) {
   let destroyed = false, loading = false, loadAbort = null, jumpAbort = null, frame = null, error = '', activeIndex = -1;
   let loadAttempted = false, loadSucceeded = false;
   let hideTimer = null, pointerMode = true, hiddenReason = '', marks = new Set(), hoverPosition = -1;
-  let renderedReply = null, fullAnswer = null, answerWidth = 0;
+  let renderedReply = null, fullAnswer = null, answerWidth = 0, answerFont = '';
   const bookmarkCache = window.__questionTimelineBookmarkCache ||= new Map();
 
   function setHover(index, position = index) {
@@ -120,10 +120,26 @@ function installQuestionTimeline(readState, options = {}) {
     // Scrollbar and border pixels are outside the space available to the timeline.
     const left = Math.max(0, bounds.left + root.clientLeft), right = Math.min(innerWidth, bounds.right, bounds.left + root.clientLeft + root.clientWidth);
     const top = Math.max(0, bounds.top + root.clientTop), bottom = Math.min(innerHeight, bounds.bottom, bounds.top + root.clientTop + root.clientHeight);
-    const content = [...root.querySelectorAll('[data-turn-key]')].map(element => element.getBoundingClientRect())
-      .filter(r => r.width > 0 && r.height > 0 && r.bottom > top && r.top < bottom);
-    const contentRight = content.length ? Math.max(...content.map(r => r.right)) : right;
-    const contentLeft = content.length ? Math.min(...content.map(r => r.left)) : left;
+    // Single pass over visible turn elements for both margin check and active turn tracking.
+    const indices = new Map(state.entries.map((entry, index) => [entry.key, index]));
+    const position = top + Math.min(60, (bottom - top) * .15);
+    let contentRight = -Infinity, contentLeft = Infinity, hasContent = false;
+    let nextActive = -1, nearest = Infinity;
+    const visible = new Set();
+    for (const element of root.querySelectorAll('[data-turn-key]')) {
+      const r = element.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0 || r.bottom <= top || r.top >= bottom) continue;
+      hasContent = true;
+      if (r.right > contentRight) contentRight = r.right;
+      if (r.left < contentLeft) contentLeft = r.left;
+      const candidate = indices.get(element.getAttribute('data-turn-key'));
+      if (candidate !== undefined) {
+        visible.add(candidate);
+        const distance = position < r.top ? r.top - position : position > r.bottom ? position - r.bottom : 0;
+        if (distance < nearest) { nextActive = candidate; nearest = distance; }
+      }
+    }
+    if (!hasContent) { contentRight = right; contentLeft = left; }
     const margin = side === 'left' ? contentLeft - left : right - contentRight;
     hiddenReason = margin < 68 ? 'insufficient-margin' : bottom - top < 100 ? 'insufficient-height' : '';
     dock.hidden = !!hiddenReason;
@@ -133,7 +149,10 @@ function installQuestionTimeline(readState, options = {}) {
     const height = Math.min(available, buttons.length * 10 + 6) + 36;
     dock.style.left = (side === 'left' ? left : right - 44) + 'px';
     dock.style.top = top + (bottom - top - height) / 2 + 'px';
-    const rgb = getComputedStyle(root).color.match(/[\d.]+/g)?.map(Number);
+    const rootStyle = getComputedStyle(root);
+    host.style.fontFamily = rootStyle.fontFamily || 'inherit';
+    host.style.fontWeight = rootStyle.fontWeight || 'inherit';
+    const rgb = rootStyle.color.match(/[\d.]+/g)?.map(Number);
     const dark = rgb && (rgb[0] + rgb[1] + rgb[2]) / 3 > 150;
     host.style.setProperty('--qt-bg', dark ? '#252426' : '#fffdfd');
     host.style.setProperty('--qt-ink', dark ? '#f0edf1' : '#29242a');
@@ -142,6 +161,7 @@ function installQuestionTimeline(readState, options = {}) {
     host.style.setProperty('--qt-mark', dark ? '#bfb7c7' : '#746d79');
     host.style.setProperty('--qt-border', dark ? '#49454c' : '#ddd8dd');
     host.style.setProperty('--qt-code', dark ? '#363237' : '#efedef');
+    active({ index: nextActive, visible });
   }
   function renderAnswer(markdown) {
     // Create formatting nodes explicitly. Conversation HTML and image/link URLs
@@ -259,36 +279,43 @@ function installQuestionTimeline(readState, options = {}) {
     status.hidden = !message;
     bubble.hidden = false;
     const bounds = buttons[index].getBoundingClientRect(), dockBounds = dock.getBoundingClientRect();
-    const space = side === 'left' ? innerWidth - dockBounds.right - 16 : dockBounds.left - 16;
+    const gap = 0, edge = 8;
+    const space = side === 'left' ? innerWidth - dockBounds.right - gap - edge : dockBounds.left - gap - edge;
     const width = Math.min(320, Math.max(160, space));
     bubble.style.width = width + 'px';
-    if (!answer.hidden && (replyChanged || answerWidth !== answer.clientWidth)) {
-      answerWidth = answer.clientWidth;
+    const previewFont = getComputedStyle(answer).font;
+    if (!answer.hidden && (replyChanged || answerWidth !== answer.clientWidth || answerFont !== previewFont)) {
+      answerWidth = answer.clientWidth; answerFont = previewFont;
       answer.replaceChildren(...[...fullAnswer.childNodes].map(node=>node.cloneNode(true)));
       fitAnswer();
     }
-    bubble.style.left = (side === 'left' ? Math.min(innerWidth - width - 8, dockBounds.right + 8) : Math.max(8, dockBounds.left - width - 8)) + 'px';
+    bubble.style.left = (side === 'left' ? Math.min(innerWidth - width - edge, dockBounds.right + gap) : Math.max(edge, dockBounds.left - width - gap)) + 'px';
     bubble.style.top = Math.max(8, Math.min(innerHeight - bubble.offsetHeight - 8, bounds.top - 18)) + 'px';
   }
-  function active() {
+  function active(prefetched) {
     frame = null;
     if (!state || !root) return;
     // Native ChatGPT uses column-reverse and negative scrollTop. Mounted DOM
     // coordinates also avoid errors from estimated heights in the virtual list.
-    const viewport = root.getBoundingClientRect();
-    const top = Math.max(0, viewport.top + root.clientTop), bottom = Math.min(innerHeight, viewport.bottom, viewport.top + root.clientTop + root.clientHeight);
-    const position = top + Math.min(60, (bottom - top) * .15);
-    const indices = new Map(state.entries.map((entry, index) => [entry.key, index]));
-    let index = -1, nearest = Infinity;
-    const visible = new Set();
-    for (const element of root.querySelectorAll('[data-turn-key]')) {
-      const candidate = indices.get(element.getAttribute('data-turn-key'));
-      if (candidate === undefined) continue;
-      const bounds = element.getBoundingClientRect();
-      if (bounds.bottom <= top || bounds.top >= bottom || bounds.height <= 0) continue;
-      visible.add(candidate);
-      const distance = position < bounds.top ? bounds.top - position : position > bounds.bottom ? position - bounds.bottom : 0;
-      if (distance < nearest) { index = candidate; nearest = distance; }
+    let index = -1, visible;
+    if (prefetched) {
+      ({ index, visible } = prefetched);
+    } else {
+      const viewport = root.getBoundingClientRect();
+      const top = Math.max(0, viewport.top + root.clientTop), bottom = Math.min(innerHeight, viewport.bottom, viewport.top + root.clientTop + root.clientHeight);
+      const position = top + Math.min(60, (bottom - top) * .15);
+      const indices = new Map(state.entries.map((entry, index) => [entry.key, index]));
+      let nearest = Infinity;
+      visible = new Set();
+      for (const element of root.querySelectorAll('[data-turn-key]')) {
+        const candidate = indices.get(element.getAttribute('data-turn-key'));
+        if (candidate === undefined) continue;
+        const bounds = element.getBoundingClientRect();
+        if (bounds.bottom <= top || bounds.top >= bottom || bounds.height <= 0) continue;
+        visible.add(candidate);
+        const distance = position < bounds.top ? bounds.top - position : position > bounds.bottom ? position - bounds.bottom : 0;
+        if (distance < nearest) { index = candidate; nearest = distance; }
+      }
     }
     if (index < 0) return;
     buttons.forEach((button, i) => button.setAttribute('data-visible', String(visible.has(i))));
@@ -418,7 +445,7 @@ function installQuestionTimeline(readState, options = {}) {
     }
     state = next;
     readMarks();
-    render(); updateMarks(); layout(); active();
+    render(); updateMarks(); layout();
     updateFade();
     retry.disabled = loading;
     retry.setAttribute('data-tooltip', loading ? '正在加载历史' : error || '重新加载目录');
@@ -433,6 +460,7 @@ function installQuestionTimeline(readState, options = {}) {
     if (frame !== null) cancelAnimationFrame(frame);
     root?.removeEventListener('scroll', scheduleActive);
     window.removeEventListener('resize', refresh); host.remove();
+    document.removeEventListener('visibilitychange', visibilityChanged);
     window.removeEventListener('keydown', keyboardMode, true);
     if (window.__questionTimelinePrototype === handle) delete window.__questionTimelinePrototype;
     state = null; buttons = [];
@@ -506,10 +534,12 @@ function installQuestionTimeline(readState, options = {}) {
     setHover(index, position);
   });
   function keyboardMode(event) { if (event.key === 'Tab') pointerMode = false; }
+  function visibilityChanged() { if (!document.hidden) refresh(); }
   window.addEventListener('keydown', keyboardMode, true);
   window.addEventListener('resize', refresh);
+  document.addEventListener('visibilitychange', visibilityChanged);
   const resizeObserver = new ResizeObserver(refresh);
-  const interval = setInterval(refresh, 1200);
+  const interval = setInterval(() => { if (!document.hidden) refresh(); }, 1200);
   applySide();
   refresh();
   return handle.summary();

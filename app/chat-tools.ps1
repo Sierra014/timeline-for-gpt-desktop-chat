@@ -106,7 +106,7 @@ function Add-Button([string]$text,[int]$x,[int]$y,[int]$width,[scriptblock]$clic
 }
 $heading = Add-Label '对话工具' 24 20 300 35
 $heading.Font = New-Object Drawing.Font('Microsoft YaHei UI',17,[Drawing.FontStyle]::Bold)
-$caption = Add-Label '索引与标注 · v0.1.11' 25 59 430 23
+$caption = Add-Label '索引与标注 · v0.1.15' 25 59 430 23
 $caption.ForeColor = [Drawing.Color]::FromArgb(112,104,109)
 $script:statusLabel = Add-Label '正在启动…' 25 95 440 48
 $script:statusLabel.Font = New-Object Drawing.Font('Microsoft YaHei UI',10,[Drawing.FontStyle]::Bold)
@@ -278,6 +278,8 @@ foreach ($legacyName in @('Local\ChatTimelineTray-v1','Local\ChatAnnotationsTray
     $legacyMutexes += $legacyMutex
 }
 $openEvent = [Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::AutoReset,'Local\ChatToolsOpen-v1')
+$script:lastStatusWriteTime = [DateTime]::MinValue
+$script:cachedStatus = $null
 $timer = New-Object Windows.Forms.Timer
 $timer.Interval = 1000
 $timer.Add_Tick({
@@ -291,8 +293,13 @@ $timer.Add_Tick({
     $label = '等待本机调试连接'
     $detail = '点击“打开客户端”；已普通启动时需要先从客户端托盘退出。'
     try {
-        $status = Get-Content -LiteralPath $script:statusPath -Raw | ConvertFrom-Json
-        if ($script:worker -and $status.workerPid -eq $script:worker.Id -and ([DateTime]::UtcNow - [DateTime]::Parse($status.at).ToUniversalTime()).TotalSeconds -lt 90) {
+        $statusItem = Get-Item -LiteralPath $script:statusPath -ErrorAction Stop
+        if ($statusItem.LastWriteTimeUtc -ne $script:lastStatusWriteTime) {
+            $script:cachedStatus = Get-Content -LiteralPath $script:statusPath -Raw | ConvertFrom-Json
+            $script:lastStatusWriteTime = $statusItem.LastWriteTimeUtc
+        }
+        $status = $script:cachedStatus
+        if ($script:worker -and $status -and $status.workerPid -eq $script:worker.Id -and ([DateTime]::UtcNow - [DateTime]::Parse($status.at).ToUniversalTime()).TotalSeconds -lt 90) {
             $lines = @()
             foreach ($entry in @(@('对话索引',$status.timeline),@('标注',$status.annotations))) {
                 $feature = $entry[1]
@@ -314,9 +321,11 @@ $timer.Add_Tick({
     } catch { }
     if ($script:launchProblem -and $label -like '*等待*连接*') { $detail = $script:launchProblem }
     if ($script:worker -and $script:worker.HasExited) { $label = '监视进程已退出'; $detail = '正在自动恢复监视；详情见诊断目录。' }
-    $script:statusLabel.Text = $label; $script:detailLabel.Text = $detail
+    if ($script:statusLabel.Text -cne $label) { $script:statusLabel.Text = $label }
+    if ($script:detailLabel.Text -cne $detail) { $script:detailLabel.Text = $detail }
     $text = '对话工具 · ' + $label.Replace("`r`n",' / ')
-    $script:notify.Text = $text.Substring(0,[Math]::Min(63,$text.Length))
+    $shortText = $text.Substring(0,[Math]::Min(63,$text.Length))
+    if ($script:notify.Text -cne $shortText) { $script:notify.Text = $shortText }
 })
 $script:form.Add_Shown({
     try {

@@ -78,7 +78,7 @@ function readChatTimelineState(atom) {
 }
 
 async function installInChatGPT(installUI, readChat, options = {}, resolveNative) {
-  const build = options.compatibility || {entryScript:'app://-/assets/index-261894768656.js',historyModule:'app://-/assets/app-initial-1da99842592d.js',historyExport:'qDn',mathModule:'app://-/assets/katex-fb2359bfd034.js'};
+  const build = options.compatibility || {entryScript:'app://-/assets/index-8d83f53932f0.js',historyModule:'app://-/assets/app-initial-df84a35d942d.js',historyExport:'HUn',mathModule:'app://-/assets/katex-fb2359bfd034.js'};
   const resolved = await resolveNative(readChat, build);
   const {atom, renderMath, diagnostics} = resolved;
   window.__questionTimelineDiagnostics = diagnostics;
