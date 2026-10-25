@@ -1,5 +1,5 @@
 {
-  "toolVersion": "0.1.11",
+  "toolVersion": "0.1.12",
   "buildPolicy": "attempt-and-log",
   "packageName": "OpenAI.Codex",
   "verifiedStoreVersion": "26.1016.8622.0",
