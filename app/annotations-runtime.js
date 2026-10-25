@@ -6,7 +6,21 @@ function installChatAnnotations(readSurface, options = {}) {
   if (!CSS.highlights || typeof Highlight !== 'function') return {installed: false, reason: 'highlight-api-unavailable'};
   let surface = readSurface();
   if (!surface) return {installed: false, reason: 'answer-dom-unavailable'};
-  const version = '0.1.23', storagePrefix = 'chat-annotations:v1:', colors = ['pink', 'yellow', 'green'];
+  const version = '0.1.24', storagePrefix = 'chat-annotations:v1:', colors = ['pink', 'yellow', 'green'];
+  const colorPrefKey = 'chat-annotations:preference:color:v1';
+  function getPreferredColor() {
+    try {
+      const saved = localStorage.getItem(colorPrefKey);
+      if (colors.includes(saved)) return saved;
+      const idx = parseInt(saved, 10);
+      if (idx >= 0 && idx < colors.length) return colors[idx];
+    } catch {}
+    return colors[0];
+  }
+  function setPreferredColor(color) {
+    if (!colors.includes(color)) return;
+    try { localStorage.setItem(colorPrefKey, color); } catch {}
+  }
   const store = window.__chatAnnotationStoreV1 || null, dirtyContexts = new Set();
   const names = colors.map(color => 'chat-annotations-' + color);
   const excluded = 'script,style,button,input,textarea,[contenteditable="true"],[aria-hidden="true"],.sr-only,math,.katex,svg';
@@ -51,7 +65,7 @@ function installChatAnnotations(readSurface, options = {}) {
   document.head.append(style); document.body.append(host);
   const $ = selector => shadow.querySelector(selector);
   const dock = $('.dock'), card = $('.card'), navigator = $('.navigator'), list = $('.list'), noteInput = $('textarea'), preview = $('.preview'), tooltip = $('.tooltip');
-  let records = [], matches = new Map(), statuses = new Map(), pending = null, editing = null, chosenColor = 'pink';
+  let records = [], matches = new Map(), statuses = new Map(), pending = null, editing = null, chosenColor = getPreferredColor();
   let saved = true, destroyed = false, ready = false, observer = null, timer = 0, frame = 0, refreshTimer = 0, toastTimer = 0, context = '', lastRect = null;
   const memory = new Map(), hiddenMenus = new Set();
   let hoverTimer = 0, hoverFrame = 0, hoverPoint = null, hoveredId = null, previewRect = null, pressPoint = null;
@@ -667,7 +681,7 @@ function installChatAnnotations(readSurface, options = {}) {
   }
   function showEditor(record, rect) {
     hideHoverPanels(); editing = record; lastRect = rect; card.hidden = false;
-    noteInput.value = record.note || ''; choose(record.color || 'pink');
+    noteInput.value = record.note || ''; choose(record.color || getPreferredColor());
     $('.delete').hidden = !records.some(item => item.id === record.id);
     position();
   }
@@ -728,12 +742,12 @@ function installChatAnnotations(readSurface, options = {}) {
     const button = document.createElement('button'); button.className = 'swatch'; button.dataset.color = color;
     button.style.backgroundColor = {yellow:'#efd477',green:'#89d7b0',pink:'#eda6c6'}[color];
     button.setAttribute('aria-label', t().swatches[color]);
-    button.onclick = () => choose(color); $('.palette').append(button);
+    button.onclick = () => { choose(color); setPreferredColor(color); }; $('.palette').append(button);
   }
   function newAnnotation(rect) {
     if (!pending) return;
     const {range, ...anchor} = pending;
-    showEditor({...anchor, id: crypto.randomUUID(), color: 'pink', note: '', createdAt: new Date().toISOString()}, rect);
+    showEditor({...anchor, id: crypto.randomUUID(), color: getPreferredColor(), note: '', createdAt: new Date().toISOString()}, rect);
   }
   $('.mode-toggle').onclick = () => {
     setAnnotationMode(!annotationMode);
@@ -798,7 +812,7 @@ function installChatAnnotations(readSurface, options = {}) {
   timer = setInterval(() => { if (!document.hidden) refresh(); }, 1500);
   function summary() { return {installed:ready && !destroyed, version, messages:surface?.messages.length || 0, annotations:records.length,
     located:matches.size, historyNavigable:historyReady.size, unresolved:records.length - matches.size, storageAvailable:saved,
-    mode:surface?.contextId.split(':')[0] || null, annotationMode, uiTheme}; }
+    mode:surface?.contextId.split(':')[0] || null, annotationMode, uiTheme, preferredColor: getPreferredColor()}; }
   function destroy() {
     navigationAbort?.abort();
     destroyed = true; observer?.disconnect(); clearInterval(timer); clearTimeout(refreshTimer); clearTimeout(toastTimer); clearTimeout(hoverTimer); cancelAnimationFrame(frame); cancelAnimationFrame(hoverFrame);
